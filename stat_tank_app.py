@@ -4,9 +4,9 @@ import pandas as pd
 from collections import Counter
 import requests
 
-st.set_page_config(page_title="广琦私藏-数据分析坦克", layout="wide")
+st.set_page_config(page_title="数据分析坦克", layout="wide")
 
-st.title("📊 广琦私藏：大乐透频率动态统计坦克")
+st.title("📊 大乐透频率动态统计坦克")
 st.markdown("---")
 
 # 1. 模拟抓取最新数据 (实际部署可更换为真实接口)
