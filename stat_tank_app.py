@@ -33,13 +33,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 超级数据抓取引擎 (绕过官方IP封锁，从500彩票网获取绝对最新数据)
+# 2. 超级数据抓取引擎 (加入动态防错位机制)
 # ==========================================
-@st.cache_data(ttl=1800) # 缓存半小时
+@st.cache_data(ttl=1800)
 def fetch_latest_data(lottery_code, limit=100):
-    """
-    lottery_code: 'dlt' (大乐透) 或 'ssq' (双色球)
-    """
     url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={limit}&sort=0"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
@@ -48,7 +45,6 @@ def fetch_latest_data(lottery_code, limit=100):
         response.encoding = 'utf-8'
         html = response.text
         
-        # 使用正则表达式暴力解析网页表格，无视大部分前端变动
         tbody_match = re.search(r'<tbody id="tdata">(.*?)</tbody>', html, re.DOTALL)
         if not tbody_match:
             return pd.DataFrame()
@@ -59,24 +55,29 @@ def fetch_latest_data(lottery_code, limit=100):
         parsed_data = []
         for tr in trs:
             tds = re.findall(r'<td.*?>(.*?)</td>', tr, re.DOTALL)
-            # 清洗掉 td 里面的 font 等无用标签
             clean_tds = [re.sub(r'<.*?>', '', td).strip() for td in tds]
             
-            # 必须是以数字开头的才算有效行（期号）
             if len(clean_tds) >= 8 and clean_tds[0].isdigit():
+                # 🛡️ 核心修复：动态纠偏逻辑
+                # 如果第2列（索引1）也是类似期号的巨大数字，说明存在隐藏列，真实号码从第3列（索引2）开始
+                try:
+                    start_idx = 2 if int(clean_tds[1]) > 100 else 1
+                except:
+                    start_idx = 1
+                    
                 if lottery_code == 'dlt':
                     parsed_data.append({
                         '期号': clean_tds[0],
-                        '前1': int(clean_tds[1]), '前2': int(clean_tds[2]), '前3': int(clean_tds[3]),
-                        '前4': int(clean_tds[4]), '前5': int(clean_tds[5]),
-                        '后1': int(clean_tds[6]), '后2': int(clean_tds[7])
+                        '前1': int(clean_tds[start_idx]), '前2': int(clean_tds[start_idx+1]), '前3': int(clean_tds[start_idx+2]),
+                        '前4': int(clean_tds[start_idx+3]), '前5': int(clean_tds[start_idx+4]),
+                        '后1': int(clean_tds[start_idx+5]), '后2': int(clean_tds[start_idx+6])
                     })
                 elif lottery_code == 'ssq':
                     parsed_data.append({
                         '期号': clean_tds[0],
-                        '前1': int(clean_tds[1]), '前2': int(clean_tds[2]), '前3': int(clean_tds[3]),
-                        '前4': int(clean_tds[4]), '前5': int(clean_tds[5]), '前6': int(clean_tds[6]),
-                        '后1': int(clean_tds[7])
+                        '前1': int(clean_tds[start_idx]), '前2': int(clean_tds[start_idx+1]), '前3': int(clean_tds[start_idx+2]),
+                        '前4': int(clean_tds[start_idx+3]), '前5': int(clean_tds[start_idx+4]), '前6': int(clean_tds[start_idx+5]),
+                        '后1': int(clean_tds[start_idx+6])
                     })
                     
         if parsed_data:
@@ -95,7 +96,7 @@ def calculate_frequencies(df, is_dlt=True):
         front_nums = df[['前1', '前2', '前3', '前4', '前5']].values.flatten()
         back_nums = df[['后1', '后2']].values.flatten()
         front_max, back_max = 35, 12
-    else: # SSQ
+    else:
         front_nums = df[['前1', '前2', '前3', '前4', '前5', '前6']].values.flatten()
         back_nums = df[['后1']].values.flatten()
         front_max, back_max = 33, 16
@@ -103,7 +104,6 @@ def calculate_frequencies(df, is_dlt=True):
     front_counts = Counter(front_nums)
     back_counts = Counter(back_nums)
     
-    # 强制补全0次出现的号码，保证全部显示
     for i in range(1, front_max + 1): front_counts.setdefault(i, 0)
     for i in range(1, back_max + 1): back_counts.setdefault(i, 0)
         
@@ -120,7 +120,7 @@ with st.sidebar:
     period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=100, value=30, step=10)
     
     st.markdown("---")
-    st.caption("🔧 系统状态：公网直连模式 (已破除IP封锁)")
+    st.caption("🔧 系统状态：公网直连模式 (带自动纠偏)")
     st.caption("🛡️ 数据源：500.com 实时图表")
 
 # ==========================================
@@ -128,7 +128,6 @@ with st.sidebar:
 # ==========================================
 st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
 
-# 根据选择执行抓取
 is_dlt = "DLT" in lottery_type
 df = fetch_latest_data('dlt' if is_dlt else 'ssq', limit=period_limit)
 
@@ -138,13 +137,11 @@ if not df.empty:
     
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
     
-    # --- 高频触达矩阵 ---
     st.subheader("🧬 核心出现频次矩阵")
     
     col1, col2 = st.columns(2)
     
     def render_balls(counts_dict, ball_class):
-        # 按频次从大到小分组
         freq_group = {}
         for num, freq in counts_dict.items():
             freq_group.setdefault(freq, []).append(num)
@@ -169,7 +166,6 @@ if not df.empty:
         st.markdown(f"### 🔴 后区 (1-{'12' if is_dlt else '16'})")
         st.markdown(render_balls(back_counts, "ball-back"), unsafe_allow_html=True)
 
-    # --- 数据可视化 ---
     st.markdown("---")
     st.subheader("📊 全局前区号码热度柱状图")
     front_df = pd.DataFrame(list(front_counts.items()), columns=['号码', '出现次数']).sort_values('号码')
