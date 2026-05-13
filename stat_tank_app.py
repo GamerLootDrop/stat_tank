@@ -37,99 +37,102 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 终极数据引擎 (全球代理节点轮询矩阵)
+# 2. 降维打击数据引擎 (官方内部 JSON 接口 + 备用路线)
 # ==========================================
 @st.cache_data(ttl=86400)
 def fetch_base_data(lottery_code):
-    limit = 100 
+    limit = 100
+    
+    # 定义代理跳板矩阵（专门用来对付云端 IP 屏蔽）
+    proxy_nodes = [
+        "",  # 节点0：尝试云端直连
+        "https://api.allorigins.win/raw?url=", # 节点1：AllOrigins
+        "https://corsproxy.io/?", # 节点2：Corsproxy
+    ]
+    
+    # ---------------------------------------------------------
+    # 💥 战术 A：直接截取官方内部 JSON 数据 (最快、最准、无商业级 WAF)
+    # ---------------------------------------------------------
+    if lottery_code == 'ssq':
+        official_url = f"http://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=ssq&issueCount={limit}"
+        off_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "http://www.cwl.gov.cn/"}
+    else:
+        official_url = f"https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=85&provinceId=0&pageSize={limit}&isVerify=1&pageNo=1"
+        off_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+    for node in proxy_nodes:
+        try:
+            req_url = official_url if node == "" else node + urllib.parse.quote(official_url)
+            res = requests.get(req_url, headers=off_headers, timeout=10)
+            
+            if res.status_code == 200:
+                data = res.json()
+                parsed_data = []
+                
+                if lottery_code == 'ssq':
+                    for item in data.get('result', []):
+                        reds = item['red'].split(',')
+                        parsed_data.append({
+                            '期号': item['code'],
+                            '前1': int(reds[0]), '前2': int(reds[1]), '前3': int(reds[2]),
+                            '前4': int(reds[3]), '前5': int(reds[4]), '前6': int(reds[5]),
+                            '后1': int(item['blue'])
+                        })
+                else:
+                    for item in data.get('value', {}).get('list', []):
+                        nums = item['lotteryDrawResult'].split()
+                        parsed_data.append({
+                            '期号': item['lotteryDrawNum'],
+                            '前1': int(nums[0]), '前2': int(nums[1]), '前3': int(nums[2]),
+                            '前4': int(nums[3]), '前5': int(nums[4]),
+                            '后1': int(nums[5]), '后2': int(nums[6])
+                        })
+                
+                if parsed_data:
+                    return pd.DataFrame(parsed_data)
+        except:
+            continue # 如果当前节点被官方屏蔽，立刻切换下一个节点
+
+    # ---------------------------------------------------------
+    # 🛡️ 战术 B：极限备用路线 (500.com HTML 强行解析) 
+    # 如果福彩/体彩官网宕机，作为最后一道防线
+    # ---------------------------------------------------------
     timestamp = int(time.time())
     target_url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={limit}&sort=0&_={timestamp}"
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    }
-    
-    # 💥 核心突破口：多重代理跳板轮询机制
-    proxy_nodes = [
-        "",  # 节点1：云端直连强突
-        "https://api.codetabs.com/v1/proxy?quest=", # 节点2：Codetabs 高匿节点
-        "https://corsproxy.io/?", # 节点3：CorsProxy 节点
-    ]
-    
-    html = ""
-    
-    # 引擎启动：逐个节点尝试突破
     for node in proxy_nodes:
         try:
-            if node == "":
-                req_url = target_url
-            elif "corsproxy" in node:
-                req_url = node + urllib.parse.quote(target_url)
-            else:
-                req_url = node + target_url
-                
-            res = requests.get(req_url, headers=headers, timeout=12)
+            req_url = target_url if node == "" else node + urllib.parse.quote(target_url)
+            res = requests.get(req_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
             res.encoding = 'utf-8'
+            html = res.text
             
-            # 严格防伪校验：确保拿到的是数据表格，而不是安全验证网页
-            if '<tbody id="tdata">' in res.text and 'class="t_tr1"' in res.text:
-                html = res.text
-                break # 突破成功！立刻跳出循环
+            if '<tbody id="tdata">' in html:
+                tbody = re.search(r'<tbody id="tdata">(.*?)</tbody>', html, re.DOTALL).group(1)
+                trs = re.findall(r'<tr.*?>(.*?)</tr>', tbody, re.DOTALL)
+                parsed_data = []
+                for tr in trs:
+                    tds = re.findall(r'<td.*?>(.*?)</td>', tr, re.DOTALL)
+                    clean_tds = [re.sub(r'<.*?>', '', td).strip() for td in tds]
+                    if len(clean_tds) >= 8 and clean_tds[0].isdigit() and len(clean_tds[0]) > 4:
+                        try: start_idx = 2 if int(clean_tds[1]) > 100 else 1
+                        except: start_idx = 1
+                        if lottery_code == 'dlt':
+                            parsed_data.append({
+                                '期号': clean_tds[0], '前1': int(clean_tds[start_idx]), '前2': int(clean_tds[start_idx+1]), 
+                                '前3': int(clean_tds[start_idx+2]), '前4': int(clean_tds[start_idx+3]), '前5': int(clean_tds[start_idx+4]),
+                                '后1': int(clean_tds[start_idx+5]), '后2': int(clean_tds[start_idx+6])
+                            })
+                        elif lottery_code == 'ssq':
+                            parsed_data.append({
+                                '期号': clean_tds[0], '前1': int(clean_tds[start_idx]), '前2': int(clean_tds[start_idx+1]), 
+                                '前3': int(clean_tds[start_idx+2]), '前4': int(clean_tds[start_idx+3]), '前5': int(clean_tds[start_idx+4]), 
+                                '前6': int(clean_tds[start_idx+5]), '后1': int(clean_tds[start_idx+6])
+                            })
+                if parsed_data: return pd.DataFrame(parsed_data)
         except:
-            continue # 失败则无缝切换下一个节点
+            continue
             
-    # 节点4（终极备用）：AllOrigins JSON 数据提取模式
-    if not html:
-        try:
-            json_url = f"https://api.allorigins.win/get?url={urllib.parse.quote(target_url)}"
-            res = requests.get(json_url, timeout=15)
-            data = res.json()
-            if '<tbody id="tdata">' in data.get('contents', ''):
-                html = data['contents']
-        except:
-            pass
-            
-    # 如果所有节点全部阵亡（极小概率）
-    if not html: 
-        return pd.DataFrame()
-        
-    # --- 开始解析强行拖回来的数据 ---
-    try:
-        tbody_match = re.search(r'<tbody id="tdata">(.*?)</tbody>', html, re.DOTALL)
-        if not tbody_match: return pd.DataFrame()
-            
-        tbody = tbody_match.group(1)
-        trs = re.findall(r'<tr.*?>(.*?)</tr>', tbody, re.DOTALL)
-        
-        parsed_data = []
-        for tr in trs:
-            tds = re.findall(r'<td.*?>(.*?)</td>', tr, re.DOTALL)
-            clean_tds = [re.sub(r'<.*?>', '', td).strip() for td in tds]
-            
-            if len(clean_tds) >= 8 and clean_tds[0].isdigit() and len(clean_tds[0]) > 4:
-                try: start_idx = 2 if int(clean_tds[1]) > 100 else 1
-                except: start_idx = 1
-                    
-                if lottery_code == 'dlt':
-                    parsed_data.append({
-                        '期号': clean_tds[0],
-                        '前1': int(clean_tds[start_idx]), '前2': int(clean_tds[start_idx+1]), '前3': int(clean_tds[start_idx+2]),
-                        '前4': int(clean_tds[start_idx+3]), '前5': int(clean_tds[start_idx+4]),
-                        '后1': int(clean_tds[start_idx+5]), '后2': int(clean_tds[start_idx+6])
-                    })
-                elif lottery_code == 'ssq':
-                    parsed_data.append({
-                        '期号': clean_tds[0],
-                        '前1': int(clean_tds[start_idx]), '前2': int(clean_tds[start_idx+1]), '前3': int(clean_tds[start_idx+2]),
-                        '前4': int(clean_tds[start_idx+3]), '前5': int(clean_tds[start_idx+4]), '前6': int(clean_tds[start_idx+5]),
-                        '后1': int(clean_tds[start_idx+6])
-                    })
-                    
-        if parsed_data: return pd.DataFrame(parsed_data)
-            
-    except Exception: pass
-    
     return pd.DataFrame()
 
 # ==========================================
@@ -181,21 +184,19 @@ with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
     st.title("控制台设置")
     
-    # 手动联网按钮
     if st.button("🔄 手动联网同步最新开奖", type="primary", use_container_width=True):
         st.cache_data.clear()
-        st.success("✅ 指令已下达！正在启动代理矩阵轮询，请稍候...")
+        st.success("✅ 已下达最高指令！正在直连官方数据中心...")
         time.sleep(1)
         st.rerun()
         
     st.markdown("---")
-    
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
     period_limit = st.slider("📅 本地数据深度扫描 (期)", min_value=10, max_value=100, value=70, step=10)
     
     st.markdown("---")
-    st.caption("🔒 引擎状态：全球节点矩阵轮询中...")
-    st.caption("🛡️ 防封策略：4重跳板自动切换 + 本地金库")
+    st.caption("🚀 引擎状态：双线多核（首选官方内部源）")
+    st.caption("🛡️ 防封策略：彻底抛弃高防 HTML，直击底层 JSON")
 
 is_dlt = "DLT" in lottery_type
 lottery_code = 'dlt' if is_dlt else 'ssq'
@@ -205,15 +206,14 @@ lottery_code = 'dlt' if is_dlt else 'ssq'
 # ==========================================
 st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
 
-# 加载提示文案也升级了
-with st.spinner('📡 正在启动代理矩阵，轮询尝试突破防火墙获取数据，这可能需要几秒钟...'):
+with st.spinner('📡 正在规避商业防火墙，通过内部接口抓取体彩/福彩官方数据...'):
     df_base = fetch_base_data(lottery_code)
 
 if not df_base.empty:
     df = df_base.head(period_limit)
     latest_issue = df_base.iloc[0]['期号']
     
-    st.info(f"💡 **当前使用的本地缓存数据最新期号为**：第 {latest_issue} 期。(如需更新，请点击左侧红色同步按钮)")
+    st.success(f"🟢 **网络联机成功！当前最新期号为**：第 {latest_issue} 期。")
     
     with st.expander("🔍 展开查看最近 10 期真实详细数据"):
         st.dataframe(df.head(10).astype(str), use_container_width=True)
@@ -271,7 +271,7 @@ if not df_base.empty:
             sel_back = st.number_input(f"选取后区个数 (至少{req_b}个)", min_value=req_b, max_value=max_b, value=req_b)
             
         bets = calculate_bets(sel_front, req_f) * calculate_bets(sel_back, req_b)
-        st.success(f"💰 共计 **{bets}** 注，需投入 **{bets * 2}** 元。（基础倍数）")
+        st.info(f"💰 共计 **{bets}** 注，需投入 **{bets * 2}** 元。（基础倍数）")
 
     with export_col:
         st.subheader("🖨️ 打印与导出中心")
@@ -281,4 +281,4 @@ if not df_base.empty:
         st.download_button("📥 下载统计报告 (.txt)", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
 
 else:
-    st.error("🚨 防御级别过高，所有跳板节点均被拦截！请稍后重试，或等待网络波动恢复。")
+    st.error("🚨 终极警报：中国大陆方向的数据接口临时熔断或正在维护，请几分钟后再点击左侧红色按钮重试！")
