@@ -33,25 +33,67 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 数据源脱机读取引擎 (彻底告别网络拦截)
+# 2. 智能脱机读取引擎 (兼容“网购野生数据”)
 # ==========================================
 @st.cache_data
 def load_local_data(lottery_code, uploaded_file=None):
-    # 优先读取管理员临时上传的文件
+    # 确定数据源
     if uploaded_file is not None:
-        try:
-            return pd.read_csv(uploaded_file)
-        except:
+        file_source = uploaded_file
+    else:
+        file_source = f"{lottery_code}.csv"
+        if not os.path.exists(file_source):
             return pd.DataFrame()
+    
+    try:
+        if hasattr(file_source, 'seek'):
+            file_source.seek(0)
+        
+        # 试探性读取第一行，看是不是标准表头
+        df_test = pd.read_csv(file_source, nrows=1)
+        
+        if '前1' in df_test.columns:
+            # 标准格式：直接读取并确保按期号倒序（最新的在最上面）
+            if hasattr(file_source, 'seek'): file_source.seek(0)
+            df = pd.read_csv(file_source)
+            df = df.sort_values(by='期号', ascending=False).reset_index(drop=True)
+            return df
+        else:
+            # ==========================================
+            # 核心升级：兼容网购的乱码数据
+            # ==========================================
+            if hasattr(file_source, 'seek'): file_source.seek(0)
             
-    # 如果没上传，则默认去读取 GitHub 根目录下的 .csv 文件
-    file_path = f"{lottery_code}.csv"
-    if os.path.exists(file_path):
-        try:
-            return pd.read_csv(file_path)
-        except:
-            pass
-    return pd.DataFrame()
+            # 根据你上传的截图结构，精准锁定列索引
+            if lottery_code == 'dlt':
+                cols_to_use = [0, 2, 3, 4, 5, 6, 7, 8]
+                col_names = ['期号', '前1', '前2', '前3', '前4', '前5', '后1', '后2']
+            else:
+                cols_to_use = [0, 2, 3, 4, 5, 6, 7, 8]
+                col_names = ['期号', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
+                
+            # 跳过前2行乱七八糟的表头，提取对应列
+            df_raw = pd.read_csv(file_source, skiprows=2, header=None, usecols=cols_to_use, encoding_errors='ignore')
+            df_raw.columns = col_names
+            
+            # 清理空数据
+            df_raw = df_raw.dropna(subset=['前1', '后1'])
+            
+            # 清理期号：把 2003001.0 变成 2003001
+            df_raw['期号'] = df_raw['期号'].astype(str).str.replace(r'\.0$', '', regex=True)
+            
+            # 清理号码：把 '04' 或 11.0 强转为纯整数
+            for col in col_names:
+                if col != '期号':
+                    df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0).astype(int)
+                    
+            # 排序：网购的数据老期数在上面，我们需要翻转过来！
+            df_raw = df_raw.sort_values(by='期号', ascending=False).reset_index(drop=True)
+            return df_raw
+            
+    except Exception as e:
+        st.error(f"❌ 数据清洗彻底失败，请检查文件格式。详细日志: {e}")
+        return pd.DataFrame()
 
 # ==========================================
 # 3. 核心运算逻辑
@@ -103,16 +145,16 @@ with st.sidebar:
     st.title("控制台设置")
     
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
-    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=100, value=70, step=10)
+    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=200, value=70, step=10)
     
     st.markdown("---")
     st.markdown("### 🗄️ 数据库管理 (Admin)")
-    st.caption("脱机模式下，可在此临时上传最新的 CSV 数据包。")
+    st.caption("脱机模式下，可在此临时上传最新的 CSV 数据包。已完美兼容网购历史数据格式。")
     uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据 (.csv)", type=['csv'])
 
     st.markdown("---")
     st.caption("🚀 引擎状态：本地静态解耦模式")
-    st.caption("🛡️ 防封策略：彻底断开公网爬虫，100% 免拦截")
+    st.caption("🛡️ 防封策略：彻底断开公网爬虫，自带智能清洗舱")
 
 is_dlt = "DLT" in lottery_type
 lottery_code = 'dlt' if is_dlt else 'ssq'
@@ -122,7 +164,7 @@ lottery_code = 'dlt' if is_dlt else 'ssq'
 # ==========================================
 st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
 
-# 读取数据：优先读上传的，没上传就读同目录下的 .csv
+# 读取数据
 df_base = load_local_data(lottery_code, uploaded_file)
 
 if not df_base.empty:
@@ -130,9 +172,9 @@ if not df_base.empty:
     df = df_base.head(period_limit)
     latest_issue = str(df_base.iloc[0]['期号'])
     
-    st.success(f"🟢 **静态金库加载成功！响应时间 0ms。当前金库最新期号为**：第 {latest_issue} 期。")
+    st.success(f"🟢 **静态金库加载成功！响应时间 0ms。已自动清洗脏数据，当前金库最新期号为**：第 {latest_issue} 期。")
     
-    with st.expander("🔍 展开查看基础数据源 (CSV)"):
+    with st.expander("🔍 展开查看清洗后的标准数据 (CSV)"):
         st.dataframe(df.head(10).astype(str), use_container_width=True)
 
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
@@ -199,8 +241,4 @@ if not df_base.empty:
 
 else:
     st.warning("⚠️ **脱机金库暂无数据！**")
-    st.info("请通过左侧边栏的【数据库管理】上传最新的 `.csv` 文件，或者在你的 GitHub 代码根目录中放置 `dlt.csv` 和 `ssq.csv`，网站将自动读取。")
-    st.markdown("""
-    **如何准备 CSV 文件？**
-    表格需包含表头：`期号,前1,前2,前3,前4,前5,后1,后2` (大乐透) 或 `期号,前1,前2,前3,前4,前5,前6,后1` (双色球)。
-    """)
+    st.info("请通过左侧边栏的【数据库管理】上传你购买的 `.csv` 文件，或者将它们重命名为 `dlt.csv` 和 `ssq.csv` 并放入代码根目录，网站将自动读取。")
