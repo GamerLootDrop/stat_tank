@@ -6,36 +6,43 @@ import os
 import random
 
 # ==========================================
-# 1. 全局页面配置
+# 1. 全局页面配置 & 强制视觉净化
 # ==========================================
 st.set_page_config(page_title="坦克指挥控制台", page_icon="🚀", layout="wide")
 
 st.markdown("""
 <style>
-    .ball-container { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-    .ball {
-        width: 38px; height: 38px; border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        font-weight: bold; font-size: 15px; color: white;
-        text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
-    }
-    .ball-red { background: radial-gradient(circle at 10px 10px, #FF4B2B, #B31217); box-shadow: 0 0 8px rgba(255, 75, 43, 0.6); }
-    .ball-blue { background: radial-gradient(circle at 10px 10px, #6FB1FC, #0052D4); box-shadow: 0 0 8px rgba(0, 82, 212, 0.6); }
-    .ball-yellow { background: radial-gradient(circle at 10px 10px, #FFD700, #F39C12); color: #333; text-shadow: none; box-shadow: 0 0 8px rgba(243, 156, 18, 0.6); }
+    /* 彻底抹除原生组件的黑背景和边框 */
+    .stApp { background-color: #0E1117; }
+    div[data-testid="stMarkdownContainer"] pre, code { background: transparent !important; border: none !important; color: #00E676 !important; }
+    div[data-testid="stNotification"], .stAlert { background-color: rgba(0,230,118,0.05) !important; border: 1px solid #333 !important; color: #90CAF9 !important; }
     
-    .freq-tag {
-        background-color: #2b2b2b; color: #00E676; padding: 5px 10px;
-        border-radius: 5px; font-weight: bold; margin-right: 15px;
-        border-left: 4px solid #00E676;
-        min-width: 80px; text-align: center;
+    /* 极致紧凑布局：减小手机端间距 */
+    .block-container { padding-top: 1rem !important; padding-bottom: 0rem !important; }
+    div[data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
+
+    /* 迷你球样式：解决手机端显示过大问题 */
+    .mini-ball {
+        display: inline-flex; width: 24px; height: 24px; border-radius: 50%;
+        align-items: center; justify-content: center;
+        font-size: 11px; margin: 1px; color: #E0E0E0;
+        border: 1px solid #444; background: #262626;
     }
-    .stat-row { display: flex; align-items: center; margin-bottom: 10px; background: #1E1E1E; padding: 10px; border-radius: 8px;}
-    .filter-box { background: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333;}
+    .pool-box { line-height: 1.2; padding: 5px 0; margin-bottom: 5px; }
+    
+    /* 隐藏输入框的多余标签以节省高度 */
+    div[data-testid="stNumberInput"] label { font-size: 0.8rem; color: #888; }
+    
+    /* 结果显示区 */
+    .result-card { 
+        background: #161b22; padding: 12px; border-radius: 8px; 
+        border-left: 4px solid #00E676; margin-top: 5px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 智能脱机读取引擎 
+# 2. 智能脱机读取引擎 (保留原逻辑)
 # ==========================================
 @st.cache_data
 def load_local_data(lottery_code, uploaded_file=None):
@@ -45,12 +52,10 @@ def load_local_data(lottery_code, uploaded_file=None):
         if uploaded_file.name.endswith(('.xls', '.xlsx')): is_excel = True
     else:
         if os.path.exists(f"{lottery_code}.xls"):
-            file_source = f"{lottery_code}.xls"
-            is_excel = True
+            file_source = f"{lottery_code}.xls"; is_excel = True
         elif os.path.exists(f"{lottery_code}.csv"):
             file_source = f"{lottery_code}.csv"
-        else:
-            return pd.DataFrame()
+        else: return pd.DataFrame()
     
     try:
         if hasattr(file_source, 'seek'): file_source.seek(0)
@@ -60,15 +65,13 @@ def load_local_data(lottery_code, uploaded_file=None):
                 except: 
                     if hasattr(src, 'seek'): src.seek(0)
                     return pd.read_csv(src, sep='\t', **kwargs)
-            else:
-                return pd.read_csv(src, encoding_errors='ignore', **kwargs)
+            else: return pd.read_csv(src, encoding_errors='ignore', **kwargs)
 
         df_test = read_data(file_source, nrows=1)
         if '前1' in df_test.columns:
             if hasattr(file_source, 'seek'): file_source.seek(0)
             df = read_data(file_source)
-            df = df.sort_values(by='期号', ascending=False).reset_index(drop=True)
-            return df
+            return df.sort_values(by='期号', ascending=False).reset_index(drop=True)
         else:
             if hasattr(file_source, 'seek'): file_source.seek(0)
             if lottery_code == 'dlt':
@@ -82,189 +85,98 @@ def load_local_data(lottery_code, uploaded_file=None):
             for col in col_names:
                 if col != '期号': df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0).astype(int)
             return df_raw.sort_values(by='期号', ascending=False).reset_index(drop=True)
-    except Exception as e:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
+
+def calculate_bets(n, r): return math.comb(n, r) if r <= n and r >= 0 else 0
 
 # ==========================================
-# 3. 核心运算逻辑
-# ==========================================
-def calculate_frequencies(df, is_dlt=True):
-    if is_dlt:
-        front_nums, back_nums = df[['前1', '前2', '前3', '前4', '前5']].values.flatten(), df[['后1', '后2']].values.flatten()
-        front_max, back_max = 35, 12
-    else:
-        front_nums, back_nums = df[['前1', '前2', '前3', '前4', '前5', '前6']].values.flatten(), df[['后1']].values.flatten()
-        front_max, back_max = 33, 16
-    front_counts, back_counts = Counter(front_nums), Counter(back_nums)
-    for i in range(1, front_max + 1): front_counts.setdefault(i, 0)
-    for i in range(1, back_max + 1): back_counts.setdefault(i, 0)
-    return front_counts, back_counts
-
-def calculate_bets(n, r):
-    return math.comb(n, r) if r <= n and r >= 0 else 0
-
-def generate_text_report(title, front_counts, back_counts, is_dlt):
-    report = f"========== {title} ==========\n\n[前区统计]\n"
-    def format_dict(counts_dict):
-        freq_group = {}
-        for num, freq in counts_dict.items(): freq_group.setdefault(freq, []).append(num)
-        res = ""
-        for freq in sorted(freq_group.keys(), reverse=True):
-            nums = ",".join([str(n).zfill(2) for n in sorted(freq_group[freq])])
-            res += f"{freq}次: {nums}\n"
-        return res
-    report += format_dict(front_counts) + "\n[后区统计]\n" + format_dict(back_counts) + "\n========================================="
-    return report
-
-# ==========================================
-# 4. 侧边栏
+# 3. 侧边栏配置
 # ==========================================
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
-    st.title("控制台设置")
-    lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
-    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=200, value=70, step=10)
-    st.markdown("---")
-    st.markdown("### 🗄️ 数据库管理 (Admin)")
-    uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据", type=['csv', 'xls', 'xlsx'])
+    st.title("控制台")
+    lottery_type = st.selectbox("频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
+    period_limit = st.slider("深度", 10, 200, 70)
+    uploaded_file = st.file_uploader("补给数据", type=['csv', 'xls', 'xlsx'])
 
 is_dlt = "DLT" in lottery_type
-lottery_code = 'dlt' if is_dlt else 'ssq'
-req_f, req_b = (5, 2) if is_dlt else (6, 1)
-max_f, max_b = (35, 12) if is_dlt else (33, 16)
+lot_code = 'dlt' if is_dlt else 'ssq'
+req_f, max_f = (5, 35) if is_dlt else (6, 33)
+req_b, max_b = (2, 12) if is_dlt else (1, 16)
 
 # ==========================================
-# 5. 主画面
+# 4. 主界面：012路自适应操作区
 # ==========================================
-st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
-
-df_base = load_local_data(lottery_code, uploaded_file)
+df_base = load_local_data(lot_code, uploaded_file)
 
 if not df_base.empty:
     df = df_base.head(period_limit)
-    latest_issue = str(df_base.iloc[0]['期号'])
     
-    with st.expander(f"🟢 数据加载成功！当前最新期号: 第 {latest_issue} 期 (展开查看CSV)"):
-        st.dataframe(df.head(10).astype(str), use_container_width=True)
+    # --- 智能自适应逻辑 (计算最近出号比例) ---
+    f_cols = ['前1','前2','前3','前4','前5'] if is_dlt else ['前1','前2','前3','前4','前5','前6']
+    all_f = df[f_cols].values.flatten()
+    c0 = sum(1 for x in all_f if x % 3 == 0)
+    c1 = sum(1 for x in all_f if x % 3 == 1)
+    c2 = sum(1 for x in all_f if x % 3 == 2)
+    total_f = c0 + c1 + c2
+    # 推荐配比
+    rec_f0 = round(req_f * (c0/total_f))
+    rec_f1 = round(req_f * (c1/total_f))
+    rec_f2 = req_f - rec_f0 - rec_f1
 
-    front_counts, back_counts = calculate_frequencies(df, is_dlt)
-    front_color_class, back_color_class = ("ball-blue", "ball-yellow") if is_dlt else ("ball-red", "ball-blue")
-
-    st.subheader("🧬 核心出现频次矩阵")
-    col1, col2 = st.columns(2)
-    def render_balls(counts_dict, ball_class):
-        freq_group = {}
-        for num, freq in counts_dict.items(): freq_group.setdefault(freq, []).append(num)
-        html_str = ""
-        for freq in sorted(freq_group.keys(), reverse=True):
-            nums_sorted = sorted(freq_group[freq])
-            balls_html = "".join([f"<div class='ball {ball_class}'>{str(n).zfill(2)}</div>" for n in nums_sorted])
-            html_str += f"<div class='stat-row'><div class='freq-tag'>{freq} 次</div><div class='ball-container' style='margin-bottom:0;'>{balls_html}</div></div>"
-        return html_str
-
-    with col1:
-        st.markdown(f"### {'🔵' if is_dlt else '🔴'} 前区 (1-{max_f})")
-        st.markdown(render_balls(front_counts, front_color_class), unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"### {'🟡' if is_dlt else '🔵'} 后区 (1-{max_b})")
-        st.markdown(render_balls(back_counts, back_color_class), unsafe_allow_html=True)
-
-    st.markdown("---")
+    st.subheader(f"📐 012路 智能操作 (第{df_base.iloc[0]['期号']}期)")
     
-    # ==========================================
-    # 🌟 基础计算器 (保留区)
-    # ==========================================
-    calc_col, export_col = st.columns([1.5, 1])
-    with calc_col:
-        st.subheader("🧮 基础复式计算器")
-        cc1, cc2 = st.columns(2)
-        with cc1: sel_front = st.number_input(f"选取前区个数 (至少{req_f}个)", min_value=req_f, max_value=max_f, value=req_f)
-        with cc2: sel_back = st.number_input(f"选取后区个数 (至少{req_b}个)", min_value=req_b, max_value=max_b, value=req_b)
-        bets = calculate_bets(sel_front, req_f) * calculate_bets(sel_back, req_b)
-        st.info(f"💰 基础全包共计 **{bets}** 注，需投入 **{bets * 2}** 元。")
-
-    with export_col:
-        st.subheader("🖨️ 导出走势报告")
-        text_report = generate_text_report(f"{lottery_type} 近 {period_limit} 期走势", front_counts, back_counts, is_dlt)
-        st.download_button("📥 下载统计 txt", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
-
-    st.markdown("---")
+    # --- 傻瓜式一键设置 ---
+    c_btn1, c_btn2, c_btn3 = st.columns([1, 1.5, 1])
+    with c_btn1:
+        if st.button("✨ 智能自适应", use_container_width=True):
+            st.session_state.f0, st.session_state.f1, st.session_state.f2 = rec_f0, rec_f1, rec_f2
+    with c_btn2:
+        preset = st.selectbox("快速配比选项", ["自定义", "2-2-1", "2-1-2", "1-2-2", "3-1-1", "1-3-1", "1-1-3"] if is_dlt else ["自定义", "2-2-2", "3-2-1", "1-2-3", "4-1-1", "2-3-1"])
+        if preset != "自定义":
+            p_vals = [int(x) for x in preset.split('-')]
+            st.session_state.f0, st.session_state.f1, st.session_state.f2 = p_vals[0], p_vals[1], p_vals[2]
     
-    # ==========================================
-    # 📐 012路形态过滤引擎 (新加装区)
-    # ==========================================
-    st.subheader("📐 012路形态过滤引擎 (基于概率论与组合数学)")
-    st.caption("运用你提供的公式文档，通过排列组合 $C_n^k$ 和独立事件乘法原理，精准计算特定 012路 形态的注数！")
-    
-    # 引入文档中的数学公式
-    with st.expander("📝 展开查看底层计算公式参考"):
-        st.markdown("基于《计算公式000.docx》：")
-        st.latex(r"C_n^k = \frac{n!}{k!(n-k)!} \quad \text{(组合数)}")
-        st.latex(r"P(AB) = P(A)P(B) \quad \text{(独立事件与乘法原理)}")
-        st.markdown("总注数 = $C_{N_{f0}}^{k_{f0}} \\times C_{N_{f1}}^{k_{f1}} \\times C_{N_{f2}}^{k_{f2}} \\times C_{N_{b0}}^{k_{b0}} \\times C_{N_{b1}}^{k_{b1}} \\times C_{N_{b2}}^{k_{b2}}$")
-
-    # 构建 0/1/2 路池
+    # --- 紧凑号池展示 (横向三列) ---
     f_0 = [x for x in range(1, max_f + 1) if x % 3 == 0]
     f_1 = [x for x in range(1, max_f + 1) if x % 3 == 1]
     f_2 = [x for x in range(1, max_f + 1) if x % 3 == 2]
-    
-    b_0 = [x for x in range(1, max_b + 1) if x % 3 == 0]
-    b_1 = [x for x in range(1, max_b + 1) if x % 3 == 1]
-    b_2 = [x for x in range(1, max_b + 1) if x % 3 == 2]
 
-    st.markdown('<div class="filter-box">', unsafe_allow_html=True)
-    f_col1, f_col2 = st.columns(2)
+    st.markdown("---")
+    col_a, col_b, col_c = st.columns(3)
     
-    # 智能预设默认分配方案
-    def_f0, def_f1, def_f2 = (2, 2, 1) if is_dlt else (2, 2, 2)
-    def_b0, def_b1, def_b2 = (0, 1, 1) if is_dlt else (0, 1, 0)
-    
-    with f_col1:
-        st.markdown(f"**{'🔵' if is_dlt else '🔴'} 前区 012路分配 (总共需选 {req_f} 个)**")
-        f_req_0 = st.number_input(f"0路出号数 (余数0, 共{len(f_0)}个码)", 0, req_f, def_f0, key="f0")
-        f_req_1 = st.number_input(f"1路出号数 (余数1, 共{len(f_1)}个码)", 0, req_f, def_f1, key="f1")
-        f_req_2 = st.number_input(f"2路出号数 (余数2, 共{len(f_2)}个码)", 0, req_f, def_f2, key="f2")
+    with col_a:
+        st.markdown("**0路**")
+        st.markdown(f"<div class='pool-box'>{''.join([f'<span class=mini-ball>{str(x).zfill(2)}</span>' for x in f_0])}</div>", unsafe_allow_html=True)
+        in_f0 = st.number_input("0路个", 0, req_f, st.session_state.get('f0', rec_f0), key="kf0", label_visibility="collapsed")
+    with col_b:
+        st.markdown("**1路**")
+        st.markdown(f"<div class='pool-box'>{''.join([f'<span class=mini-ball>{str(x).zfill(2)}</span>' for x in f_1])}</div>", unsafe_allow_html=True)
+        in_f1 = st.number_input("1路个", 0, req_f, st.session_state.get('f1', rec_f1), key="kf1", label_visibility="collapsed")
+    with col_c:
+        st.markdown("**2路**")
+        st.markdown(f"<div class='pool-box'>{''.join([f'<span class=mini-ball>{str(x).zfill(2)}</span>' for x in f_2])}</div>", unsafe_allow_html=True)
+        in_f2 = st.number_input("2路个", 0, req_f, st.session_state.get('f2', rec_f2), key="kf2", label_visibility="collapsed")
+
+    # --- 结果计算 (保留原始组合数逻辑) ---
+    if (in_f0 + in_f1 + in_f2) == req_f:
+        # 组合计算逻辑 (后区默认全包以简化操作)
+        total_bets = calculate_bets(len(f_0), in_f0) * calculate_bets(len(f_1), in_f1) * calculate_bets(len(f_2), in_f2)
+        total_bets *= calculate_bets(max_b, req_b) # 包含后区全包
         
-    with f_col2:
-        st.markdown(f"**{'🟡' if is_dlt else '🔵'} 后区 012路分配 (总共需选 {req_b} 个)**")
-        b_req_0 = st.number_input(f"0路出号数 (余数0, 共{len(b_0)}个码)", 0, req_b, def_b0, key="b0")
-        b_req_1 = st.number_input(f"1路出号数 (余数1, 共{len(b_1)}个码)", 0, req_b, def_b1, key="b1")
-        b_req_2 = st.number_input(f"2路出号数 (余数2, 共{len(b_2)}个码)", 0, req_b, def_b2, key="b2")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # 逻辑校验与计算
-    sum_f = f_req_0 + f_req_1 + f_req_2
-    sum_b = b_req_0 + b_req_1 + b_req_2
-
-    if sum_f != req_f:
-        st.error(f"⚠️ **前区数量错误！** 0/1/2路的总和必须等于 {req_f}，目前总和是 {sum_f}。")
-    elif sum_b != req_b:
-        st.error(f"⚠️ **后区数量错误！** 0/1/2路的总和必须等于 {req_b}，目前总和是 {sum_b}。")
+        st.markdown(f"""
+        <div class="result-card">
+            <div style='color:#888; font-size:12px;'>当前配比 {in_f0}:{in_f1}:{in_f2} (后区全包)</div>
+            <div style='font-size:22px; color:#FFD700; font-weight:bold; margin:4px 0;'>剩余 {total_bets} 注</div>
+            <div style='color:#00E676; font-size:14px;'>投入预估: {total_bets * 2} 元</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("🎲 提取精选号码", use_container_width=True):
+            for i in range(5):
+                pick = sorted(random.sample(f_0, in_f0) + random.sample(f_1, in_f1) + random.sample(f_2, in_f2))
+                st.code(f"{i+1}: {' '.join([str(x).zfill(2) for x in pick])}")
     else:
-        # 基于组合公式进行核心运算
-        comb_f0 = calculate_bets(len(f_0), f_req_0)
-        comb_f1 = calculate_bets(len(f_1), f_req_1)
-        comb_f2 = calculate_bets(len(f_2), f_req_2)
-        
-        comb_b0 = calculate_bets(len(b_0), b_req_0)
-        comb_b1 = calculate_bets(len(b_1), b_req_1)
-        comb_b2 = calculate_bets(len(b_2), b_req_2)
-        
-        total_filtered_bets = comb_f0 * comb_f1 * comb_f2 * comb_b0 * comb_b1 * comb_b2
-        
-        st.success(f"⚡ 根据独立事件乘法原理，当前【前区 {f_req_0}:{f_req_1}:{f_req_2} / 后区 {b_req_0}:{b_req_1}:{b_req_2}】形态下的理论极限为：**{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
-        
-        # 自动生成推荐号码
-        if total_filtered_bets > 0:
-            if st.button("🎲 提取 5 注符合该 012路 形态的实战号码"):
-                st.markdown("#### 🎯 精选实战结果：")
-                for i in range(min(5, total_filtered_bets)):
-                    pick_f = sorted(random.sample(f_0, f_req_0) + random.sample(f_1, f_req_1) + random.sample(f_2, f_req_2))
-                    pick_b = sorted(random.sample(b_0, b_req_0) + random.sample(b_1, b_req_1) + random.sample(b_2, b_req_2))
-                    
-                    f_str = " ".join([f"{str(x).zfill(2)}" for x in pick_f])
-                    b_str = " ".join([f"{str(x).zfill(2)}" for x in pick_b])
-                    st.code(f"第 {i+1} 注: [ {f_str} ] + [ {b_str} ]")
+        st.error(f"总和需等于 {req_f}")
 
 else:
-    st.warning("⚠️ **脱机金库暂无数据！** 请通过侧边栏上传 xls/csv。")
+    st.info("💡 请在左侧上传数据...")
