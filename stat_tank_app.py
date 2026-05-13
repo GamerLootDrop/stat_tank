@@ -35,7 +35,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 智能脱机读取引擎 (兼容 XLS/CSV)
+# 2. 智能脱机读取引擎 
 # ==========================================
 @st.cache_data
 def load_local_data(lottery_code, uploaded_file=None):
@@ -191,58 +191,76 @@ if not df_base.empty:
     st.markdown("---")
     
     # ==========================================
-    # 🔥 终极杀号与定胆引擎 (新加装区)
+    # 📐 012路形态过滤引擎 (新加装区)
     # ==========================================
-    st.subheader("✂️ 终极杀号与定胆引擎 (高级过滤)")
-    st.caption("通过排除废码（杀号）或锁定必出码（定胆），呈指数级压缩投注成本，精准打击！")
+    st.subheader("📐 012路形态过滤引擎 (基于概率论与组合数学)")
+    st.caption("运用你提供的公式文档，通过排列组合 $C_n^k$ 和独立事件乘法原理，精准计算特定 012路 形态的注数！")
     
+    # 引入文档中的数学公式
+    with st.expander("📝 展开查看底层计算公式参考"):
+        st.markdown("基于《计算公式000.docx》：")
+        st.latex(r"C_n^k = \frac{n!}{k!(n-k)!} \quad \text{(组合数)}")
+        st.latex(r"P(AB) = P(A)P(B) \quad \text{(独立事件与乘法原理)}")
+        st.markdown("总注数 = $C_{N_{f0}}^{k_{f0}} \\times C_{N_{f1}}^{k_{f1}} \\times C_{N_{f2}}^{k_{f2}} \\times C_{N_{b0}}^{k_{b0}} \\times C_{N_{b1}}^{k_{b1}} \\times C_{N_{b2}}^{k_{b2}}$")
+
+    # 构建 0/1/2 路池
+    f_0 = [x for x in range(1, max_f + 1) if x % 3 == 0]
+    f_1 = [x for x in range(1, max_f + 1) if x % 3 == 1]
+    f_2 = [x for x in range(1, max_f + 1) if x % 3 == 2]
+    
+    b_0 = [x for x in range(1, max_b + 1) if x % 3 == 0]
+    b_1 = [x for x in range(1, max_b + 1) if x % 3 == 1]
+    b_2 = [x for x in range(1, max_b + 1) if x % 3 == 2]
+
     st.markdown('<div class="filter-box">', unsafe_allow_html=True)
     f_col1, f_col2 = st.columns(2)
     
-    all_f_nums = list(range(1, max_f + 1))
-    all_b_nums = list(range(1, max_b + 1))
+    # 智能预设默认分配方案
+    def_f0, def_f1, def_f2 = (2, 2, 1) if is_dlt else (2, 2, 2)
+    def_b0, def_b1, def_b2 = (0, 1, 1) if is_dlt else (0, 1, 0)
     
     with f_col1:
-        st.markdown(f"**{'🔵' if is_dlt else '🔴'} 设定前区**")
-        kill_f = st.multiselect("❌ 杀号 (绝对不出的废码)", all_f_nums, format_func=lambda x: str(x).zfill(2), key="kf")
-        avail_f = [x for x in all_f_nums if x not in kill_f]
-        dan_f = st.multiselect("✅ 定胆 (绝对必出的金码)", avail_f, format_func=lambda x: str(x).zfill(2), key="df")
+        st.markdown(f"**{'🔵' if is_dlt else '🔴'} 前区 012路分配 (总共需选 {req_f} 个)**")
+        f_req_0 = st.number_input(f"0路出号数 (余数0, 共{len(f_0)}个码)", 0, req_f, def_f0, key="f0")
+        f_req_1 = st.number_input(f"1路出号数 (余数1, 共{len(f_1)}个码)", 0, req_f, def_f1, key="f1")
+        f_req_2 = st.number_input(f"2路出号数 (余数2, 共{len(f_2)}个码)", 0, req_f, def_f2, key="f2")
         
     with f_col2:
-        st.markdown(f"**{'🟡' if is_dlt else '🔵'} 设定后区**")
-        kill_b = st.multiselect("❌ 杀号 (绝对不出的废码)", all_b_nums, format_func=lambda x: str(x).zfill(2), key="kb")
-        avail_b = [x for x in all_b_nums if x not in kill_b]
-        dan_b = st.multiselect("✅ 定胆 (绝对必出的金码)", avail_b, format_func=lambda x: str(x).zfill(2), key="db")
+        st.markdown(f"**{'🟡' if is_dlt else '🔵'} 后区 012路分配 (总共需选 {req_b} 个)**")
+        b_req_0 = st.number_input(f"0路出号数 (余数0, 共{len(b_0)}个码)", 0, req_b, def_b0, key="b0")
+        b_req_1 = st.number_input(f"1路出号数 (余数1, 共{len(b_1)}个码)", 0, req_b, def_b1, key="b1")
+        b_req_2 = st.number_input(f"2路出号数 (余数2, 共{len(b_2)}个码)", 0, req_b, def_b2, key="b2")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 过滤计算逻辑
-    pool_f_size, need_f = len(avail_f) - len(dan_f), req_f - len(dan_f)
-    pool_b_size, need_b = len(avail_b) - len(dan_b), req_b - len(dan_b)
+    # 逻辑校验与计算
+    sum_f = f_req_0 + f_req_1 + f_req_2
+    sum_b = b_req_0 + b_req_1 + b_req_2
 
-    # 错误拦截：胆码超过规定数量，或者剩下的球不够选
-    if need_f < 0 or need_b < 0:
-        st.error("⚠️ 胆码选得太多了！超过了单注的容量。")
-    elif pool_f_size < need_f or pool_b_size < need_b:
-        st.error("⚠️ 杀号杀得太狠了！剩下的球不够组合成一注了，请手下留情。")
+    if sum_f != req_f:
+        st.error(f"⚠️ **前区数量错误！** 0/1/2路的总和必须等于 {req_f}，目前总和是 {sum_f}。")
+    elif sum_b != req_b:
+        st.error(f"⚠️ **后区数量错误！** 0/1/2路的总和必须等于 {req_b}，目前总和是 {sum_b}。")
     else:
-        filtered_f_bets = calculate_bets(pool_f_size, need_f)
-        filtered_b_bets = calculate_bets(pool_b_size, need_b)
-        total_filtered_bets = filtered_f_bets * filtered_b_bets
+        # 基于组合公式进行核心运算
+        comb_f0 = calculate_bets(len(f_0), f_req_0)
+        comb_f1 = calculate_bets(len(f_1), f_req_1)
+        comb_f2 = calculate_bets(len(f_2), f_req_2)
         
-        st.success(f"⚡ 经过精密过滤，可能出现的组合已暴降至：**{total_filtered_bets}** 注！仅需投入 **{total_filtered_bets * 2}** 元。")
+        comb_b0 = calculate_bets(len(b_0), b_req_0)
+        comb_b1 = calculate_bets(len(b_1), b_req_1)
+        comb_b2 = calculate_bets(len(b_2), b_req_2)
+        
+        total_filtered_bets = comb_f0 * comb_f1 * comb_f2 * comb_b0 * comb_b1 * comb_b2
+        
+        st.success(f"⚡ 根据独立事件乘法原理，当前【前区 {f_req_0}:{f_req_1}:{f_req_2} / 后区 {b_req_0}:{b_req_1}:{b_req_2}】形态下的理论极限为：**{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
         
         # 自动生成推荐号码
         if total_filtered_bets > 0:
-            if st.button("🎲 提取 5 注实战精选号码"):
-                st.markdown("#### 🎯 过滤后的精选实战结果：")
-                # 剩余可选的球池
-                safe_f_pool = [x for x in avail_f if x not in dan_f]
-                safe_b_pool = [x for x in avail_b if x not in dan_b]
-                
+            if st.button("🎲 提取 5 注符合该 012路 形态的实战号码"):
+                st.markdown("#### 🎯 精选实战结果：")
                 for i in range(min(5, total_filtered_bets)):
-                    # 随机从剩余安全池抽，补齐需要的个数，并和定胆码合并排序
-                    pick_f = sorted(dan_f + random.sample(safe_f_pool, need_f))
-                    pick_b = sorted(dan_b + random.sample(safe_b_pool, need_b))
+                    pick_f = sorted(random.sample(f_0, f_req_0) + random.sample(f_1, f_req_1) + random.sample(f_2, f_req_2))
+                    pick_b = sorted(random.sample(b_0, b_req_0) + random.sample(b_1, b_req_1) + random.sample(b_2, b_req_2))
                     
                     f_str = " ".join([f"{str(x).zfill(2)}" for x in pick_f])
                     b_str = " ".join([f"{str(x).zfill(2)}" for x in pick_b])
