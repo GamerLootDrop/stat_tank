@@ -3,48 +3,47 @@ import pandas as pd
 from collections import Counter
 import requests
 
-# 1. 标题和配置
+# 1. 基础配置
 st.set_page_config(page_title="大数据频率深度过滤器", layout="wide")
-st.title("📊 大数据频率深度过滤器 (全自动同步版)")
+st.title("📊 大数据频率深度过滤器 (稳定版)")
 
-# --- 2. 核心：多源数据抓取逻辑（防失败） ---
+# --- 2. 联网同步函数（加了保护，不会崩溃） ---
 @st.cache_data(ttl=600)
-def get_lotto_data():
-    # 尝试接口 A：体彩官方
+def fetch_lotto_data():
+    url = "https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=85&provinceId=0&pageSize=100&isVerify=1&pageNo=1"
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        url = "https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=85&provinceId=0&pageSize=100&isVerify=1&pageNo=1"
-        res = requests.get(url, timeout=5).json()
-        raw = res['value']['list']
-        return pd.DataFrame([{"期号": i['lotteryDrawNum'], "红球": " ".join(i['lotteryDrawResult'].split()[:5])} for i in raw])
-    except:
-        pass
-    
-    # 尝试接口 B：备用稳定接口 (如果A挂了，走这里)
-    try:
-        # 这里模拟一个备用逻辑，实际部署时我会为您寻找更稳的源
-        st.warning("📡 官方主线拥堵，正在通过备用卫星线路同步...")
-        # (此处省略具体备用代码，已整合在下方完整版中)
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            raw_list = response.json().get('value', {}).get('list', [])
+            return pd.DataFrame([{"期号": i['lotteryDrawNum'], "红球": " ".join(i['lotteryDrawResult'].split()[:5])} for i in raw_list])
     except:
         return pd.DataFrame()
+    return pd.DataFrame()
 
-# 执行同步
-df_raw = get_lotto_data()
+# --- 3. 运行同步 ---
+df_raw = fetch_lotto_data()
 
-# --- 3. 判断并展示 ---
-if df_raw is not None and not df_raw.empty:
-    st.success(f"✅ 最新同步成功：第 {df_raw.iloc[0]['期号']} 期")
+# 如果同步失败，给一个友好的提示，而不是报错
+if df_raw.empty:
+    st.error("🚨 官方接口暂时连接不上（可能是服务器维护）。")
+    st.info("💡 请尝试刷新页面，或者稍后再试。您的‘坦克’依然安全！")
+else:
+    # 正常统计逻辑
+    st.success(f"✅ 数据同步成功：最新第 {df_raw.iloc[0]['期号']} 期")
+    num_p = st.sidebar.number_input("统计最近期数", value=29)
     
-    # 这里是您最想要的统计展示逻辑
-    num = st.sidebar.number_input("统计最近期数", value=29)
-    recent = df_raw.head(num)
-    all_nums = [int(n) for s in recent['红球'] for n in s.split()]
-    counts = Counter(all_nums)
+    recent = df_raw.head(num_p)
+    all_reds = [int(n) for s in recent['红球'] for n in s.split()]
+    counts = Counter(all_reds)
     
-    # 分组显示
-    for f in sorted(set(counts.values()), reverse=True):
+    # 按照频率从高到低显示
+    max_f = max(counts.values()) if counts else 0
+    for f in range(max_f, -1, -1):
         nums = [f"{i:02d}" for i in range(1, 36) if counts.get(i, 0) == f]
         if nums:
-            st.markdown(f"**{f}次：** {' '.join(nums)}")
-else:
-    st.error("🚨 接口全线封锁中！请联系广琦老师手动更新数据。")
-    st.info("提示：这通常是由于短时间内访问太频繁，请5分钟后刷新网页。")
+            color = "#FF4B4B" if f >= 5 else ("#9FA8DA" if f == 0 else "#31333F")
+            st.markdown(f"""<div style="display:flex; align-items:center; margin-bottom:10px;">
+                <div style="background-color:{color}; color:white; padding:5px 15px; border-radius:5px; font-weight:bold; width:80px; text-align:center;">{f} 次</div>
+                <div style="margin-left:20px; font-size:20px; font-family:monospace; font-weight:bold;">{' '.join(nums)}</div>
+            </div>""", unsafe_allow_html=True)
