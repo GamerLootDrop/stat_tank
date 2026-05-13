@@ -33,29 +33,50 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 智能脱机读取引擎 (兼容“网购野生数据”)
+# 2. 智能脱机读取引擎 (兼容 XLS/CSV 与野生数据)
 # ==========================================
 @st.cache_data
 def load_local_data(lottery_code, uploaded_file=None):
-    # 确定数据源
+    is_excel = False
+    
+    # 确定数据源与文件类型
     if uploaded_file is not None:
         file_source = uploaded_file
+        if uploaded_file.name.endswith(('.xls', '.xlsx')):
+            is_excel = True
     else:
-        file_source = f"{lottery_code}.csv"
-        if not os.path.exists(file_source):
+        # 如果没上传，优先找本地的 xls，找不到再找 csv
+        if os.path.exists(f"{lottery_code}.xls"):
+            file_source = f"{lottery_code}.xls"
+            is_excel = True
+        elif os.path.exists(f"{lottery_code}.csv"):
+            file_source = f"{lottery_code}.csv"
+        else:
             return pd.DataFrame()
     
     try:
         if hasattr(file_source, 'seek'):
             file_source.seek(0)
-        
+            
+        # 内部读取函数封装
+        def read_data(src, **kwargs):
+            if is_excel:
+                # 很多所谓的老xls其实是伪装的HTML或TSV，如果报错我们回退到csv引擎读取
+                try:
+                    return pd.read_excel(src, **kwargs)
+                except Exception:
+                    if hasattr(src, 'seek'): src.seek(0)
+                    return pd.read_csv(src, sep='\t', **kwargs)
+            else:
+                return pd.read_csv(src, encoding_errors='ignore', **kwargs)
+
         # 试探性读取第一行，看是不是标准表头
-        df_test = pd.read_csv(file_source, nrows=1)
+        df_test = read_data(file_source, nrows=1)
         
         if '前1' in df_test.columns:
-            # 标准格式：直接读取并确保按期号倒序（最新的在最上面）
+            # 标准格式：直接读取并确保按期号倒序
             if hasattr(file_source, 'seek'): file_source.seek(0)
-            df = pd.read_csv(file_source)
+            df = read_data(file_source)
             df = df.sort_values(by='期号', ascending=False).reset_index(drop=True)
             return df
         else:
@@ -64,7 +85,7 @@ def load_local_data(lottery_code, uploaded_file=None):
             # ==========================================
             if hasattr(file_source, 'seek'): file_source.seek(0)
             
-            # 根据你上传的截图结构，精准锁定列索引
+            # 根据你上传的截图结构锁定列
             if lottery_code == 'dlt':
                 cols_to_use = [0, 2, 3, 4, 5, 6, 7, 8]
                 col_names = ['期号', '前1', '前2', '前3', '前4', '前5', '后1', '后2']
@@ -72,8 +93,8 @@ def load_local_data(lottery_code, uploaded_file=None):
                 cols_to_use = [0, 2, 3, 4, 5, 6, 7, 8]
                 col_names = ['期号', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
                 
-            # 跳过前2行乱七八糟的表头，提取对应列
-            df_raw = pd.read_csv(file_source, skiprows=2, header=None, usecols=cols_to_use, encoding_errors='ignore')
+            # 跳过前2行乱七八糟的表头
+            df_raw = read_data(file_source, skiprows=2, header=None, usecols=cols_to_use)
             df_raw.columns = col_names
             
             # 清理空数据
@@ -82,12 +103,12 @@ def load_local_data(lottery_code, uploaded_file=None):
             # 清理期号：把 2003001.0 变成 2003001
             df_raw['期号'] = df_raw['期号'].astype(str).str.replace(r'\.0$', '', regex=True)
             
-            # 清理号码：把 '04' 或 11.0 强转为纯整数
+            # 清理号码：强转为纯整数
             for col in col_names:
                 if col != '期号':
                     df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0).astype(int)
                     
-            # 排序：网购的数据老期数在上面，我们需要翻转过来！
+            # 排序：网购的数据老期数在上面，我们需要翻转过来
             df_raw = df_raw.sort_values(by='期号', ascending=False).reset_index(drop=True)
             return df_raw
             
@@ -149,8 +170,9 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 🗄️ 数据库管理 (Admin)")
-    st.caption("脱机模式下，可在此临时上传最新的 CSV 数据包。已完美兼容网购历史数据格式。")
-    uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据 (.csv)", type=['csv'])
+    st.caption("现在支持上传 .xls, .xlsx 或 .csv 格式的文件。")
+    # 🔥 这里放开了文件后缀限制
+    uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据", type=['csv', 'xls', 'xlsx'])
 
     st.markdown("---")
     st.caption("🚀 引擎状态：本地静态解耦模式")
@@ -172,9 +194,9 @@ if not df_base.empty:
     df = df_base.head(period_limit)
     latest_issue = str(df_base.iloc[0]['期号'])
     
-    st.success(f"🟢 **静态金库加载成功！响应时间 0ms。已自动清洗脏数据，当前金库最新期号为**：第 {latest_issue} 期。")
+    st.success(f"🟢 **静态金库加载成功！响应时间 0ms。已自动清洗 {uploaded_file.name if uploaded_file else '本地'} 数据，当前最新期号为**：第 {latest_issue} 期。")
     
-    with st.expander("🔍 展开查看清洗后的标准数据 (CSV)"):
+    with st.expander("🔍 展开查看清洗后的标准数据"):
         st.dataframe(df.head(10).astype(str), use_container_width=True)
 
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
@@ -241,4 +263,4 @@ if not df_base.empty:
 
 else:
     st.warning("⚠️ **脱机金库暂无数据！**")
-    st.info("请通过左侧边栏的【数据库管理】上传你购买的 `.csv` 文件，或者将它们重命名为 `dlt.csv` 和 `ssq.csv` 并放入代码根目录，网站将自动读取。")
+    st.info("请通过左侧边栏的【数据库管理】直接上传你购买的 `.xls` 或 `.csv` 文件。")
