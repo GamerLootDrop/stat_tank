@@ -33,12 +33,20 @@ st.markdown("""
     .filter-box { background: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333;}
     .filter-box { background: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333;}
     
-    /* 屏蔽所有跳转和水印 */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    [data-testid="stHeader"] {display: none;}
-    .stDeployButton {display:none;}
+    /* 1. 彻底封死顶部区域：禁止点击、高度归零 */
+    [data-testid="stHeader"], .stApp > header {
+        display: none !important;
+        pointer-events: none !important;
+        height: 0px !important;
+    }
+    
+    /* 2. 深度抹除所有官方图标和菜单按钮 */
+    #MainMenu, footer, .stDeployButton, .stAppDeployButton, [data-testid="stToolbar"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
