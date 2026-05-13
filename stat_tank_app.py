@@ -1,147 +1,168 @@
 import streamlit as st
 import pandas as pd
+import requests
+import plotly.express as px
 from collections import Counter
-import os
-import re
 
-# 1. 顶级配置
-st.set_page_config(page_title="指挥官专用数据终端", layout="wide")
+# ==========================================
+# 1. 全局页面配置 (开启宽屏和暗黑模式感)
+# ==========================================
+st.set_page_config(page_title="坦克指挥控制台", page_icon="🚀", layout="wide")
 
-# --- 🚀 纯黑金沉浸式 UI 装修 ---
+# 注入自定义 CSS，打造发光的高级“号码球”和卡片效果
 st.markdown("""
-    <style>
-    /* 1. 强制主背景 */
-    .stApp {
-        background: radial-gradient(circle, #1b2735 0%, #090a0f 100%);
-        color: #ffffff;
-    }
-    
-    /* 2. 彻底改造左侧面板 */
-    [data-testid="stSidebar"] {
-        background: rgba(10, 10, 20, 0.95) !important;
-        border-right: 2px solid #333;
-        box-shadow: 10px 0 30px rgba(0,0,0,0.5);
-    }
-    
-    /* 3. 侧边栏内的文字和组件 */
-    [data-testid="stSidebar"] .stMarkdown h2 {
-        color: #00d2ff;
-        font-family: "Microsoft YaHei";
-        text-shadow: 0 0 10px rgba(0,210,255,0.5);
-        border-bottom: 2px solid #00d2ff;
-        padding-bottom: 10px;
-    }
-    
-    /* 4. 频率卡片 - 尊享金属质感 */
-    .freq-box {
-        background: linear-gradient(145deg, #16213e, #0f3460);
-        border-radius: 20px;
-        padding: 25px;
-        margin-bottom: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 8px 8px 20px #05050a, -2px -2px 10px rgba(255,255,255,0.05);
-        display: flex;
-        align-items: center;
-    }
-    
-    /* 5. 频率数字 */
-    .f-label {
-        font-size: 1.8rem;
-        font-weight: 900;
-        color: #f9d423; /* 黄金色 */
-        min-width: 150px;
-        text-align: center;
-        border-right: 3px solid rgba(255,255,255,0.1);
-    }
-    
-    /* 6. 号码球效果 */
+<style>
+    .ball-container { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
     .ball {
-        background: radial-gradient(circle at 30% 30%, #00f2fe, #0077be);
-        color: white;
-        border-radius: 50%;
-        width: 50px;
-        height: 50px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        font-size: 1.3rem;
-        margin: 0 8px;
-        box-shadow: 0 5px 15px rgba(0,242,254,0.4);
-        border: 2px solid #ffffff;
+        width: 40px; height: 40px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: bold; font-size: 16px; color: white;
+        box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
     }
+    .ball-front { background: linear-gradient(135deg, #0052D4, #4364F7, #6FB1FC); }
+    .ball-back { background: linear-gradient(135deg, #FF416C, #FF4B2B); }
+    .freq-tag {
+        background-color: #2b2b2b; color: #00E676; padding: 5px 10px;
+        border-radius: 5px; font-weight: bold; margin-right: 15px;
+        border-left: 4px solid #00E676;
+    }
+    .stat-row { display: flex; align-items: center; margin-bottom: 15px; background: #1E1E1E; padding: 10px; border-radius: 8px;}
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 2. 数据抓取引擎 (以体彩大乐透官方接口为例)
+# ==========================================
+@st.cache_data(ttl=3600) # 缓存1小时，避免频繁请求被封
+def fetch_dlt_data(limit=100):
+    """从官方API自动抓取大乐透最新数据"""
+    # 这是国家体彩网的公开历史数据接口
+    url = f"https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=85&provinceId=0&pageSize={limit}&isVerify=1&pageNo=1"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
-    .hot { border-left: 10px solid #ff416c; }
-    .cold { border-left: 10px solid #485563; opacity: 0.5; }
-    </style>
-    """, unsafe_allow_html=True)
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        data = response.json()
+        
+        if data.get('success'):
+            records = data['value']['list']
+            parsed_data = []
+            for item in records:
+                draw_no = item['lotteryDrawNum']
+                # 开奖结果格式如 "01 04 12 16 29 03 08"
+                numbers = item['lotteryDrawResult'].split(' ')
+                parsed_data.append({
+                    '期号': draw_no,
+                    '前1': int(numbers[0]), '前2': int(numbers[1]), '前3': int(numbers[2]),
+                    '前4': int(numbers[3]), '前5': int(numbers[4]),
+                    '后1': int(numbers[5]), '后2': int(numbers[6])
+                })
+            return pd.DataFrame(parsed_data)
+    except Exception as e:
+        st.error(f"数据抓取失败: {e}")
+        return pd.DataFrame()
 
-# --- 2. 文件强行识别与汉化 ---
-all_files = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
-menu_data = {}
+# ==========================================
+# 3. 核心统计逻辑
+# ==========================================
+def calculate_frequencies(df, front_max=35, back_max=12):
+    front_nums = df[['前1', '前2', '前3', '前4', '前5']].values.flatten()
+    back_nums = df[['后1', '后2']].values.flatten()
+    
+    front_counts = Counter(front_nums)
+    back_counts = Counter(back_nums)
+    
+    # 补全0次出现的号码
+    for i in range(1, front_max + 1): front_counts.setdefault(i, 0)
+    for i in range(1, back_max + 1): back_counts.setdefault(i, 0)
+        
+    return front_counts, back_counts
 
-for f in all_files:
-    # 模糊识别
-    if "ssq" in f.lower() or "双色球" in f:
-        menu_data["🔴 双色球·大数据分析中心"] = f
-    elif "dlt" in f.lower() or "data" in f:
-        menu_data["🟢 大乐透·大数据分析中心"] = f
-    else:
-        menu_data[f"📂 其它数据: {f}"] = f
-
-# --- 3. 侧边栏布局 ---
+# ==========================================
+# 4. 侧边栏：操作控制台
+# ==========================================
 with st.sidebar:
-    st.markdown("## 坦克指挥控制台")
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
+    st.title("控制台设置")
     
-    # 这里是您要的中文选项
-    select_label = st.selectbox("🛸 切换演算频道", list(menu_data.keys()))
-    target_csv = menu_data[select_label]
+    lottery_type = st.selectbox("🎯 切换演算频道", ["大乐透 (DLT)", "双色球 (SSQ) - 待接入"])
     
-    num_p = st.slider("📅 深度扫描期数", 5, 200, 50)
+    # 高级滑块操作：随意拖动，右侧数据瞬间变化
+    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=100, value=30, step=10)
+    
     st.markdown("---")
-    st.write("🔧 系统状态: 极佳")
-    st.write("🛡️ 加固逻辑: 碎石机3.0版")
+    st.caption("🔧 系统状态：自动联机抓取中...")
+    st.caption("🛡️ 加固逻辑：碎石机 4.0 Pro版")
 
-# --- 4. 主演算逻辑 ---
-st.markdown(f"### 🚀 当前正在执行：{select_label}")
+# ==========================================
+# 5. 主画面：高级数据看板
+# ==========================================
+st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
 
-try:
-    with open(target_csv, 'r', encoding='utf-8', errors='ignore') as f:
-        lines = f.readlines()
+# 执行抓取
+if "DLT" in lottery_type:
+    df = fetch_dlt_data(limit=period_limit)
+else:
+    st.warning("双色球接口正在施工中，当前演示大乐透。")
+    df = fetch_dlt_data(limit=period_limit)
+
+if not df.empty:
+    # 顶部数据概览
+    latest_issue = df.iloc[0]
+    st.info(f"🟢 **最新开奖获取成功**：第 {latest_issue['期号']} 期")
     
-    is_ssq = "双色球" in select_label
-    balls_limit = 6 if is_ssq else 5
-    max_num = 33 if is_ssq else 35
+    front_counts, back_counts = calculate_frequencies(df)
     
-    # 暴力提取
-    data_pool = []
-    processed_count = 0
-    for line in lines[2:]:
-        if processed_count >= num_p: break
-        nums = [int(n) for n in re.findall(r'\d+', line) if 1 <= int(n) <= max_num]
-        if len(nums) >= balls_limit:
-            data_pool.extend(nums[:balls_limit])
-            processed_count += 1
+    # ------------------------------------------
+    # 模块 A：高级柱状图走势 (Plotly)
+    # ------------------------------------------
+    st.subheader("📊 全局号码热度图谱")
+    
+    # 转换数据给 Plotly 用
+    front_df = pd.DataFrame(list(front_counts.items()), columns=['号码', '出现次数']).sort_values('号码')
+    front_df['号码'] = front_df['号码'].astype(str).str.zfill(2) # 补零，如 01, 02
+    
+    fig = px.bar(front_df, x='号码', y='出现次数', 
+                 color='出现次数', color_continuous_scale='Blues',
+                 title="前区号码频次分布", text='出现次数')
+    fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", 
+                      font=dict(color="white"), margin=dict(t=40, b=0, l=0, r=0))
+    st.plotly_chart(fig, use_container_width=True)
 
-    counts = Counter(data_pool)
-    if counts:
-        # 按照出现次数从高到低展示
-        for f in range(max(counts.values()), -1, -1):
-            target_list = sorted([i for i in range(1, max_num + 1) if counts.get(i, 0) == f])
-            if not target_list: continue
+    # ------------------------------------------
+    # 模块 B：极客风号码频次矩阵 (替代干瘪的文本)
+    # ------------------------------------------
+    st.subheader("🧬 高频触达矩阵")
+    
+    col1, col2 = st.columns(2)
+    
+    def render_balls(counts_dict, ball_class):
+        # 按频次分组
+        freq_group = {}
+        for num, freq in counts_dict.items():
+            freq_group.setdefault(freq, []).append(num)
             
-            box_class = "hot" if f >= 5 else ("cold" if f == 0 else "")
-            balls_html = "".join([f'<div class="ball">{n:02d}</div>' for n in target_list])
+        # 生成 HTML
+        html_str = ""
+        for freq in sorted(freq_group.keys(), reverse=True):
+            nums_sorted = sorted(freq_group[freq])
+            balls_html = "".join([f"<div class='ball {ball_class}'>{str(n).zfill(2)}</div>" for n in nums_sorted])
             
-            st.markdown(f"""
-                <div class="freq-box {box_class}">
-                    <div class="f-label">{f} 次出现</div>
-                    <div style="display: flex; flex-wrap: wrap;">{balls_html}</div>
-                </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.warning("数据扫描完毕，未发现有效号码。")
+            html_str += f"""
+            <div class="stat-row">
+                <div class="freq-tag">{freq} 次出现</div>
+                <div class="ball-container" style="margin-bottom:0;">{balls_html}</div>
+            </div>
+            """
+        return html_str
 
-except Exception as e:
-    st.error(f"终端运行异常: {e}")
+    with col1:
+        st.markdown("### 🔵 前区 (1-35)")
+        st.markdown(render_balls(front_counts, "ball-front"), unsafe_allow_html=True)
+        
+    with col2:
+        st.markdown("### 🔴 后区 (1-12)")
+        st.markdown(render_balls(back_counts, "ball-back"), unsafe_allow_html=True)
+
+else:
+    st.error("未能获取到数据，请检查网络或API状态。")
