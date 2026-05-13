@@ -31,20 +31,6 @@ st.markdown("""
     }
     .stat-row { display: flex; align-items: center; margin-bottom: 10px; background: #1E1E1E; padding: 10px; border-radius: 8px;}
     .filter-box { background: #1E1E1E; padding: 25px; border-radius: 12px; border: 1px solid #444; margin-top: 10px;}
-    
-    /* 重点修复：号码池 UI 升级，干掉死黑背景 */
-    .pool-display { 
-        font-size: 0.85rem; 
-        color: #90CAF9; /* 浅蓝色文字，更具科技感 */
-        background: rgba(255, 255, 255, 0.05) !important; /* 强制覆盖自带黑底，改为极淡的透明白 */
-        padding: 8px 12px; 
-        border-radius: 6px; 
-        margin-bottom: 15px; 
-        border: 1px solid rgba(255, 255, 255, 0.1); 
-        line-height: 1.6;
-        box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
-    }
-    
     .result-card { background: #0E1117; padding: 15px; border-radius: 10px; border-left: 5px solid #00E676; margin-top: 15px; }
 </style>
 """, unsafe_allow_html=True)
@@ -184,19 +170,22 @@ if not df_base.empty:
 
     st.markdown('<div class="filter-box">', unsafe_allow_html=True)
     
+    # 终极镇压黑色背景的内联样式
+    pool_style = "background-color: #262C36; color: #64B5F6; font-family: Arial, sans-serif; font-size: 14px; padding: 10px 12px; border-radius: 6px; border: 1px solid #374151; margin-bottom: 12px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);"
+    
     # 侧重于前区的UI
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
         st.markdown("**0路 (余0)**")
-        st.markdown(f"<div class='pool-display'>{', '.join([str(x).zfill(2) for x in f0])}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in f0])}</div>", unsafe_allow_html=True)
         rf0 = st.number_input("前区0路出几个", 0, req_f, 2, key="rf0")
     with fc2:
         st.markdown("**1路 (余1)**")
-        st.markdown(f"<div class='pool-display'>{', '.join([str(x).zfill(2) for x in f1])}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in f1])}</div>", unsafe_allow_html=True)
         rf1 = st.number_input("前区1路出几个", 0, req_f, 2, key="rf1")
     with fc3:
         st.markdown("**2路 (余2)**")
-        st.markdown(f"<div class='pool-display'>{', '.join([str(x).zfill(2) for x in f2])}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in f2])}</div>", unsafe_allow_html=True)
         rf2 = st.number_input("前区2路出几个", 0, req_f, 1 if is_dlt else 2, key="rf2")
 
     st.markdown("---")
@@ -204,12 +193,15 @@ if not df_base.empty:
     bc1, bc2, bc3 = st.columns(3)
     with bc1:
         st.markdown(f"**后区0路 (共{len(b0)}个)**")
+        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in b0]) if b0 else '无'}</div>", unsafe_allow_html=True)
         rb0 = st.number_input("后区0路出几个", 0, req_b, 0 if is_dlt else 0, key="rb0")
     with bc2:
         st.markdown(f"**后区1路 (共{len(b1)}个)**")
+        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in b1]) if b1 else '无'}</div>", unsafe_allow_html=True)
         rb1 = st.number_input("后区1路出几个", 0, req_b, 1 if is_dlt else 1, key="rb1")
     with bc3:
         st.markdown(f"**后区2路 (共{len(b2)}个)**")
+        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in b2]) if b2 else '无'}</div>", unsafe_allow_html=True)
         rb2 = st.number_input("后区2路出几个", 0, req_b, 1 if is_dlt else 0, key="rb2")
 
     st.markdown('</div>', unsafe_allow_html=True)
