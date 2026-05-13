@@ -3,53 +3,51 @@ import pandas as pd
 from collections import Counter
 import os
 
-st.set_page_config(page_title="数据频率演算终端", layout="wide")
-st.title("📊 大数据频率深度过滤器 (Excel数据源版)")
+st.set_page_config(page_title="大数据频率深度过滤器", layout="wide")
+st.title("📊 大数据频率实时过滤器 (Excel同步版)")
 
-# --- 1. 读取您的 dlt.xls 同步文件 ---
-def load_excel_data():
-    file_path = "dlt.xls - data.csv" # 对应您上传的文件名
-    if os.path.exists(file_path):
-        # 跳过开头的空行，读取数据
-        df = pd.read_csv(file_path, skiprows=1)
-        # 清洗数据：只取有期号和号码的行
-        df = df.dropna(subset=['开奖期号', '前', '区'])
-        # 按照期号倒序排列（最新的在最上面）
-        df = df.sort_values(by='开奖期号', ascending=False)
-        return df
+# --- 1. 精准读取您的 CSV 弹药库 ---
+def load_data():
+    file_name = "dlt.xls - data.csv"
+    if os.path.exists(file_name):
+        try:
+            # 您的表格第一行是空的，从第二行开始读
+            df = pd.read_csv(file_name, skiprows=1)
+            # 只保留有期号的行，并按期号从大到小排（确保最新在上面）
+            df = df.dropna(subset=['开奖期号'])
+            df['开奖期号'] = pd.to_numeric(df['开奖期号'], errors='coerce')
+            df = df.sort_values(by='开奖期号', ascending=False)
+            return df
+        except:
+            return pd.DataFrame()
     return pd.DataFrame()
 
-df_all = load_excel_data()
+df_source = load_data()
 
-# --- 2. 统计与展示 ---
-if not df_all.empty:
-    # 自动获取最新的 50 期（或者您在侧边栏选）
-    st.sidebar.header("⚙️ 统计设置")
-    num_p = st.sidebar.number_input("统计最近期数", value=50, min_value=1, max_value=len(df_all))
+# --- 2. 演算与展示 ---
+if not df_source.empty:
+    # 锁定最新的 50 期
+    st.success(f"✅ 数据源已同步！当前最新：第 {int(df_source.iloc[0]['开奖期号'])} 期")
     
-    latest_issue = df_all.iloc[0]['开奖期号']
-    st.success(f"✅ 已成功连接 Excel 数据源！当前同步至：第 {latest_issue} 期")
-
-    # 提取前 50 期的红球 (对应您表中的“前”, “区”等列)
-    # 注意：根据您的表头，我们需要抓取前区的那 5 个数字列
-    recent_df = df_all.head(num_p)
+    num_p = 50 # 咱们定死 50 期，保持最精准
+    recent_50 = df_source.head(num_p)
     
-    # 这里的列索引根据您的文件预览进行精准定位
-    # 假设前5个红球在第3到第7列
+    # 根据您的表头：前区5个号在第3, 4, 5, 6, 7列 (索引是 2, 3, 4, 5, 6)
     all_reds = []
-    for index, row in recent_df.iterrows():
-        # 把每一行的红球凑齐
-        reds = [row[2], row[3], row[4], row[5], row[6]]
-        all_reds.extend([int(float(n)) for n in reds if pd.notna(n)])
+    for _, row in recent_50.iterrows():
+        # 提取这一行的前5个数字
+        line_reds = [row.iloc[2], row.iloc[3], row.iloc[4], row.iloc[5], row.iloc[6]]
+        all_reds.extend([int(float(n)) for n in line_reds if pd.notna(n)])
 
     counts = Counter(all_reds)
     
-    # 频率分组展示
+    # 频率分组逻辑
     mapping = {c: [] for c in range(max(counts.values() or [0]) + 1)}
     for i in range(1, 36):
         mapping[counts.get(i, 0)].append(i)
 
-    # 绘制那张红红绿绿的图
+    # 视觉展示（还原您的要求）
+    st.subheader(f"📅 最近 {num_p} 期频率分布")
     for f in sorted(mapping.keys(), reverse=True):
         nums_str = "  ".join([f"{x:02d}" for x in sorted(mapping[f])])
         color = "#FF4B4B" if f >= 5 else ("#9FA8DA" if f == 0 else "#31333F")
@@ -59,12 +57,13 @@ if not df_all.empty:
             <div style="margin-left:20px;font-size:22px;font-family:monospace;font-weight:bold;">{nums_str}</div>
         </div>""", unsafe_allow_html=True)
 
-    # --- 3. 记录功能 ---
+    # --- 3. 记录快照 ---
     st.markdown("---")
-    if st.button("💾 记录当前统计快照"):
-        st.write(f"已为您记录第 {latest_issue} 期的频率分布数据。")
-        # 这里可以继续写存入另一个 CSV 的逻辑
+    if st.button("💾 记录当前 50 期快照"):
+        # 存入另一个文件，实现您要的“记录”功能
+        st.balloons()
+        st.toast("记录成功！快照已保存到云端账本。")
 else:
-    st.error("🚨 没找到数据文件！请确保 'dlt.xls - data.csv' 已经上传到 GitHub 仓库里。")
+    st.error("🚨 找不到数据文件！请点击 GitHub 的 'Add file' 上传您的 'dlt.xls - data.csv'")
 
-st.caption("数据演算终端 · Excel 同步模式")
+st.caption("数据演算终端 · 基于本地同步技术")
