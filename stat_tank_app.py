@@ -1,12 +1,8 @@
 import streamlit as st
 import pandas as pd
-import requests
-import plotly.express as px
 from collections import Counter
-import re
 import math
-import time
-import urllib.parse
+import os
 
 # ==========================================
 # 1. 全局页面配置
@@ -37,102 +33,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 降维打击数据引擎 (官方内部 JSON 接口 + 备用路线)
+# 2. 数据源脱机读取引擎 (彻底告别网络拦截)
 # ==========================================
-@st.cache_data(ttl=86400)
-def fetch_base_data(lottery_code):
-    limit = 100
-    
-    # 定义代理跳板矩阵（专门用来对付云端 IP 屏蔽）
-    proxy_nodes = [
-        "",  # 节点0：尝试云端直连
-        "https://api.allorigins.win/raw?url=", # 节点1：AllOrigins
-        "https://corsproxy.io/?", # 节点2：Corsproxy
-    ]
-    
-    # ---------------------------------------------------------
-    # 💥 战术 A：直接截取官方内部 JSON 数据 (最快、最准、无商业级 WAF)
-    # ---------------------------------------------------------
-    if lottery_code == 'ssq':
-        official_url = f"http://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=ssq&issueCount={limit}"
-        off_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": "http://www.cwl.gov.cn/"}
-    else:
-        official_url = f"https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=85&provinceId=0&pageSize={limit}&isVerify=1&pageNo=1"
-        off_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-
-    for node in proxy_nodes:
+@st.cache_data
+def load_local_data(lottery_code, uploaded_file=None):
+    # 优先读取管理员临时上传的文件
+    if uploaded_file is not None:
         try:
-            req_url = official_url if node == "" else node + urllib.parse.quote(official_url)
-            res = requests.get(req_url, headers=off_headers, timeout=10)
-            
-            if res.status_code == 200:
-                data = res.json()
-                parsed_data = []
-                
-                if lottery_code == 'ssq':
-                    for item in data.get('result', []):
-                        reds = item['red'].split(',')
-                        parsed_data.append({
-                            '期号': item['code'],
-                            '前1': int(reds[0]), '前2': int(reds[1]), '前3': int(reds[2]),
-                            '前4': int(reds[3]), '前5': int(reds[4]), '前6': int(reds[5]),
-                            '后1': int(item['blue'])
-                        })
-                else:
-                    for item in data.get('value', {}).get('list', []):
-                        nums = item['lotteryDrawResult'].split()
-                        parsed_data.append({
-                            '期号': item['lotteryDrawNum'],
-                            '前1': int(nums[0]), '前2': int(nums[1]), '前3': int(nums[2]),
-                            '前4': int(nums[3]), '前5': int(nums[4]),
-                            '后1': int(nums[5]), '后2': int(nums[6])
-                        })
-                
-                if parsed_data:
-                    return pd.DataFrame(parsed_data)
+            return pd.read_csv(uploaded_file)
         except:
-            continue # 如果当前节点被官方屏蔽，立刻切换下一个节点
-
-    # ---------------------------------------------------------
-    # 🛡️ 战术 B：极限备用路线 (500.com HTML 强行解析) 
-    # 如果福彩/体彩官网宕机，作为最后一道防线
-    # ---------------------------------------------------------
-    timestamp = int(time.time())
-    target_url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={limit}&sort=0&_={timestamp}"
-    
-    for node in proxy_nodes:
+            return pd.DataFrame()
+            
+    # 如果没上传，则默认去读取 GitHub 根目录下的 .csv 文件
+    file_path = f"{lottery_code}.csv"
+    if os.path.exists(file_path):
         try:
-            req_url = target_url if node == "" else node + urllib.parse.quote(target_url)
-            res = requests.get(req_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-            res.encoding = 'utf-8'
-            html = res.text
-            
-            if '<tbody id="tdata">' in html:
-                tbody = re.search(r'<tbody id="tdata">(.*?)</tbody>', html, re.DOTALL).group(1)
-                trs = re.findall(r'<tr.*?>(.*?)</tr>', tbody, re.DOTALL)
-                parsed_data = []
-                for tr in trs:
-                    tds = re.findall(r'<td.*?>(.*?)</td>', tr, re.DOTALL)
-                    clean_tds = [re.sub(r'<.*?>', '', td).strip() for td in tds]
-                    if len(clean_tds) >= 8 and clean_tds[0].isdigit() and len(clean_tds[0]) > 4:
-                        try: start_idx = 2 if int(clean_tds[1]) > 100 else 1
-                        except: start_idx = 1
-                        if lottery_code == 'dlt':
-                            parsed_data.append({
-                                '期号': clean_tds[0], '前1': int(clean_tds[start_idx]), '前2': int(clean_tds[start_idx+1]), 
-                                '前3': int(clean_tds[start_idx+2]), '前4': int(clean_tds[start_idx+3]), '前5': int(clean_tds[start_idx+4]),
-                                '后1': int(clean_tds[start_idx+5]), '后2': int(clean_tds[start_idx+6])
-                            })
-                        elif lottery_code == 'ssq':
-                            parsed_data.append({
-                                '期号': clean_tds[0], '前1': int(clean_tds[start_idx]), '前2': int(clean_tds[start_idx+1]), 
-                                '前3': int(clean_tds[start_idx+2]), '前4': int(clean_tds[start_idx+3]), '前5': int(clean_tds[start_idx+4]), 
-                                '前6': int(clean_tds[start_idx+5]), '后1': int(clean_tds[start_idx+6])
-                            })
-                if parsed_data: return pd.DataFrame(parsed_data)
+            return pd.read_csv(file_path)
         except:
-            continue
-            
+            pass
     return pd.DataFrame()
 
 # ==========================================
@@ -184,19 +102,17 @@ with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
     st.title("控制台设置")
     
-    if st.button("🔄 手动联网同步最新开奖", type="primary", use_container_width=True):
-        st.cache_data.clear()
-        st.success("✅ 已下达最高指令！正在直连官方数据中心...")
-        time.sleep(1)
-        st.rerun()
-        
-    st.markdown("---")
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
-    period_limit = st.slider("📅 本地数据深度扫描 (期)", min_value=10, max_value=100, value=70, step=10)
+    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=100, value=70, step=10)
     
     st.markdown("---")
-    st.caption("🚀 引擎状态：双线多核（首选官方内部源）")
-    st.caption("🛡️ 防封策略：彻底抛弃高防 HTML，直击底层 JSON")
+    st.markdown("### 🗄️ 数据库管理 (Admin)")
+    st.caption("脱机模式下，可在此临时上传最新的 CSV 数据包。")
+    uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据 (.csv)", type=['csv'])
+
+    st.markdown("---")
+    st.caption("🚀 引擎状态：本地静态解耦模式")
+    st.caption("🛡️ 防封策略：彻底断开公网爬虫，100% 免拦截")
 
 is_dlt = "DLT" in lottery_type
 lottery_code = 'dlt' if is_dlt else 'ssq'
@@ -206,16 +122,17 @@ lottery_code = 'dlt' if is_dlt else 'ssq'
 # ==========================================
 st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
 
-with st.spinner('📡 正在规避商业防火墙，通过内部接口抓取体彩/福彩官方数据...'):
-    df_base = fetch_base_data(lottery_code)
+# 读取数据：优先读上传的，没上传就读同目录下的 .csv
+df_base = load_local_data(lottery_code, uploaded_file)
 
 if not df_base.empty:
+    # 截取滑动条指定的期数
     df = df_base.head(period_limit)
-    latest_issue = df_base.iloc[0]['期号']
+    latest_issue = str(df_base.iloc[0]['期号'])
     
-    st.success(f"🟢 **网络联机成功！当前最新期号为**：第 {latest_issue} 期。")
+    st.success(f"🟢 **静态金库加载成功！响应时间 0ms。当前金库最新期号为**：第 {latest_issue} 期。")
     
-    with st.expander("🔍 展开查看最近 10 期真实详细数据"):
+    with st.expander("🔍 展开查看基础数据源 (CSV)"):
         st.dataframe(df.head(10).astype(str), use_container_width=True)
 
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
@@ -281,4 +198,9 @@ if not df_base.empty:
         st.download_button("📥 下载统计报告 (.txt)", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
 
 else:
-    st.error("🚨 终极警报：中国大陆方向的数据接口临时熔断或正在维护，请几分钟后再点击左侧红色按钮重试！")
+    st.warning("⚠️ **脱机金库暂无数据！**")
+    st.info("请通过左侧边栏的【数据库管理】上传最新的 `.csv` 文件，或者在你的 GitHub 代码根目录中放置 `dlt.csv` 和 `ssq.csv`，网站将自动读取。")
+    st.markdown("""
+    **如何准备 CSV 文件？**
+    表格需包含表头：`期号,前1,前2,前3,前4,前5,后1,后2` (大乐透) 或 `期号,前1,前2,前3,前4,前5,前6,后1` (双色球)。
+    """)
