@@ -30,14 +30,12 @@ st.markdown("""
         min-width: 80px; text-align: center;
     }
     .stat-row { display: flex; align-items: center; margin-bottom: 10px; background: #1E1E1E; padding: 10px; border-radius: 8px;}
-    .filter-box { background: #1E1E1E; padding: 25px; border-radius: 12px; border: 1px solid #444; margin-top: 10px;}
-    .pool-display { font-size: 0.85rem; color: #aaa; margin-bottom: 10px; font-family: monospace; }
-    .result-card { background: #0E1117; padding: 15px; border-radius: 10px; border-left: 5px solid #00E676; margin-top: 15px; }
+    .filter-box { background: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333;}
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 智能脱机读取引擎
+# 2. 智能脱机读取引擎 
 # ==========================================
 @st.cache_data
 def load_local_data(lottery_code, uploaded_file=None):
@@ -88,7 +86,7 @@ def load_local_data(lottery_code, uploaded_file=None):
         return pd.DataFrame()
 
 # ==========================================
-# 3. 数学计算辅助
+# 3. 核心运算逻辑
 # ==========================================
 def calculate_frequencies(df, is_dlt=True):
     if is_dlt:
@@ -102,19 +100,33 @@ def calculate_frequencies(df, is_dlt=True):
     for i in range(1, back_max + 1): back_counts.setdefault(i, 0)
     return front_counts, back_counts
 
-def nCr(n, r):
-    return math.comb(n, r) if 0 <= r <= n else 0
+def calculate_bets(n, r):
+    return math.comb(n, r) if r <= n and r >= 0 else 0
+
+def generate_text_report(title, front_counts, back_counts, is_dlt):
+    report = f"========== {title} ==========\n\n[前区统计]\n"
+    def format_dict(counts_dict):
+        freq_group = {}
+        for num, freq in counts_dict.items(): freq_group.setdefault(freq, []).append(num)
+        res = ""
+        for freq in sorted(freq_group.keys(), reverse=True):
+            nums = ",".join([str(n).zfill(2) for n in sorted(freq_group[freq])])
+            res += f"{freq}次: {nums}\n"
+        return res
+    report += format_dict(front_counts) + "\n[后区统计]\n" + format_dict(back_counts) + "\n========================================="
+    return report
 
 # ==========================================
 # 4. 侧边栏
 # ==========================================
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
-    st.title("指挥中心")
-    lottery_type = st.selectbox("🎯 频道切换", ["双色球 (SSQ)", "大乐透 (DLT)"])
-    period_limit = st.slider("📅 走势期数", 10, 200, 70)
+    st.title("控制台设置")
+    lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
+    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=200, value=70, step=10)
     st.markdown("---")
-    uploaded_file = st.file_uploader("📂 上传新开奖文件", type=['csv', 'xls', 'xlsx'])
+    st.markdown("### 🗄️ 数据库管理 (Admin)")
+    uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据", type=['csv', 'xls', 'xlsx'])
 
 is_dlt = "DLT" in lottery_type
 lottery_code = 'dlt' if is_dlt else 'ssq'
@@ -124,19 +136,21 @@ max_f, max_b = (35, 12) if is_dlt else (33, 16)
 # ==========================================
 # 5. 主画面
 # ==========================================
-st.header(f"🚀 {lottery_type} 核心雷达走势")
+st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
 
 df_base = load_local_data(lottery_code, uploaded_file)
 
 if not df_base.empty:
     df = df_base.head(period_limit)
     latest_issue = str(df_base.iloc[0]['期号'])
-    st.caption(f"当前分析：第 {latest_issue} 期之前的 {period_limit} 期走势")
+    
+    with st.expander(f"🟢 数据加载成功！当前最新期号: 第 {latest_issue} 期 (展开查看CSV)"):
+        st.dataframe(df.head(10).astype(str), use_container_width=True)
 
-    # 1. 频次矩阵
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
     front_color_class, back_color_class = ("ball-blue", "ball-yellow") if is_dlt else ("ball-red", "ball-blue")
 
+    st.subheader("🧬 核心出现频次矩阵")
     col1, col2 = st.columns(2)
     def render_balls(counts_dict, ball_class):
         freq_group = {}
@@ -145,97 +159,112 @@ if not df_base.empty:
         for freq in sorted(freq_group.keys(), reverse=True):
             nums_sorted = sorted(freq_group[freq])
             balls_html = "".join([f"<div class='ball {ball_class}'>{str(n).zfill(2)}</div>" for n in nums_sorted])
-            html_str += f"<div class='stat-row'><div class='freq-tag'>{freq} 次</div><div class='ball-container'>{balls_html}</div></div>"
+            html_str += f"<div class='stat-row'><div class='freq-tag'>{freq} 次</div><div class='ball-container' style='margin-bottom:0;'>{balls_html}</div></div>"
         return html_str
 
     with col1:
-        st.markdown(f"### {'🔵' if is_dlt else '🔴'} 前区热度")
+        st.markdown(f"### {'🔵' if is_dlt else '🔴'} 前区 (1-{max_f})")
         st.markdown(render_balls(front_counts, front_color_class), unsafe_allow_html=True)
     with col2:
-        st.markdown(f"### {'🟡' if is_dlt else '🔵'} 后区热度")
+        st.markdown(f"### {'🟡' if is_dlt else '🔵'} 后区 (1-{max_b})")
         st.markdown(render_balls(back_counts, back_color_class), unsafe_allow_html=True)
 
     st.markdown("---")
     
-    # 2. 012路形态缩水计算器 (核心)
-    st.subheader("📐 012路 智能缩水计算器")
-    st.info(f"根据《计算公式000.docx》，通过分配 0/1/2 路出号比例，实时锁定剩余组数和金额。")
+    # ==========================================
+    # 🌟 基础计算器 (保留区)
+    # ==========================================
+    calc_col, export_col = st.columns([1.5, 1])
+    with calc_col:
+        st.subheader("🧮 基础复式计算器")
+        cc1, cc2 = st.columns(2)
+        with cc1: sel_front = st.number_input(f"选取前区个数 (至少{req_f}个)", min_value=req_f, max_value=max_f, value=req_f)
+        with cc2: sel_back = st.number_input(f"选取后区个数 (至少{req_b}个)", min_value=req_b, max_value=max_b, value=req_b)
+        bets = calculate_bets(sel_front, req_f) * calculate_bets(sel_back, req_b)
+        st.info(f"💰 基础全包共计 **{bets}** 注，需投入 **{bets * 2}** 元。")
 
-    # 定义号池
-    f0 = [x for x in range(1, max_f + 1) if x % 3 == 0]
-    f1 = [x for x in range(1, max_f + 1) if x % 3 == 1]
-    f2 = [x for x in range(1, max_f + 1) if x % 3 == 2]
-    b0 = [x for x in range(1, max_b + 1) if x % 3 == 0]
-    b1 = [x for x in range(1, max_b + 1) if x % 3 == 1]
-    b2 = [x for x in range(1, max_b + 1) if x % 3 == 2]
-
-    st.markdown('<div class="filter-box">', unsafe_allow_html=True)
-    
-    # 侧重于前区的UI
-    fc1, fc2, fc3 = st.columns(3)
-    with fc1:
-        st.markdown("**0路 (余0)**")
-        st.markdown(f"<div class='pool-display'>{', '.join([str(x).zfill(2) for x in f0])}</div>", unsafe_allow_html=True)
-        rf0 = st.number_input("前区0路出几个", 0, req_f, 2, key="rf0")
-    with fc2:
-        st.markdown("**1路 (余1)**")
-        st.markdown(f"<div class='pool-display'>{', '.join([str(x).zfill(2) for x in f1])}</div>", unsafe_allow_html=True)
-        rf1 = st.number_input("前区1路出几个", 0, req_f, 2, key="rf1")
-    with fc3:
-        st.markdown("**2路 (余2)**")
-        st.markdown(f"<div class='pool-display'>{', '.join([str(x).zfill(2) for x in f2])}</div>", unsafe_allow_html=True)
-        rf2 = st.number_input("前区2路出几个", 0, req_f, 1 if is_dlt else 2, key="rf2")
+    with export_col:
+        st.subheader("🖨️ 导出走势报告")
+        text_report = generate_text_report(f"{lottery_type} 近 {period_limit} 期走势", front_counts, back_counts, is_dlt)
+        st.download_button("📥 下载统计 txt", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
 
     st.markdown("---")
-    # 侧重于后区的UI
-    bc1, bc2, bc3 = st.columns(3)
-    with bc1:
-        st.markdown(f"**后区0路 (共{len(b0)}个)**")
-        rb0 = st.number_input("后区0路出几个", 0, req_b, 0 if is_dlt else 0, key="rb0")
-    with bc2:
-        st.markdown(f"**后区1路 (共{len(b1)}个)**")
-        rb1 = st.number_input("后区1路出几个", 0, req_b, 1 if is_dlt else 1, key="rb1")
-    with bc3:
-        st.markdown(f"**后区2路 (共{len(b2)}个)**")
-        rb2 = st.number_input("后区2路出几个", 0, req_b, 1 if is_dlt else 0, key="rb2")
+    
+    # ==========================================
+    # 📐 012路形态过滤引擎 (新加装区)
+    # ==========================================
+    st.subheader("📐 012路形态过滤引擎 (基于概率论与组合数学)")
+    st.caption("运用你提供的公式文档，通过排列组合 $C_n^k$ 和独立事件乘法原理，精准计算特定 012路 形态的注数！")
+    
+    # 引入文档中的数学公式
+    with st.expander("📝 展开查看底层计算公式参考"):
+        st.markdown("基于《计算公式000.docx》：")
+        st.latex(r"C_n^k = \frac{n!}{k!(n-k)!} \quad \text{(组合数)}")
+        st.latex(r"P(AB) = P(A)P(B) \quad \text{(独立事件与乘法原理)}")
+        st.markdown("总注数 = $C_{N_{f0}}^{k_{f0}} \\times C_{N_{f1}}^{k_{f1}} \\times C_{N_{f2}}^{k_{f2}} \\times C_{N_{b0}}^{k_{b0}} \\times C_{N_{b1}}^{k_{b1}} \\times C_{N_{b2}}^{k_{b2}}$")
 
+    # 构建 0/1/2 路池
+    f_0 = [x for x in range(1, max_f + 1) if x % 3 == 0]
+    f_1 = [x for x in range(1, max_f + 1) if x % 3 == 1]
+    f_2 = [x for x in range(1, max_f + 1) if x % 3 == 2]
+    
+    b_0 = [x for x in range(1, max_b + 1) if x % 3 == 0]
+    b_1 = [x for x in range(1, max_b + 1) if x % 3 == 1]
+    b_2 = [x for x in range(1, max_b + 1) if x % 3 == 2]
+
+    st.markdown('<div class="filter-box">', unsafe_allow_html=True)
+    f_col1, f_col2 = st.columns(2)
+    
+    # 智能预设默认分配方案
+    def_f0, def_f1, def_f2 = (2, 2, 1) if is_dlt else (2, 2, 2)
+    def_b0, def_b1, def_b2 = (0, 1, 1) if is_dlt else (0, 1, 0)
+    
+    with f_col1:
+        st.markdown(f"**{'🔵' if is_dlt else '🔴'} 前区 012路分配 (总共需选 {req_f} 个)**")
+        f_req_0 = st.number_input(f"0路出号数 (余数0, 共{len(f_0)}个码)", 0, req_f, def_f0, key="f0")
+        f_req_1 = st.number_input(f"1路出号数 (余数1, 共{len(f_1)}个码)", 0, req_f, def_f1, key="f1")
+        f_req_2 = st.number_input(f"2路出号数 (余数2, 共{len(f_2)}个码)", 0, req_f, def_f2, key="f2")
+        
+    with f_col2:
+        st.markdown(f"**{'🟡' if is_dlt else '🔵'} 后区 012路分配 (总共需选 {req_b} 个)**")
+        b_req_0 = st.number_input(f"0路出号数 (余数0, 共{len(b_0)}个码)", 0, req_b, def_b0, key="b0")
+        b_req_1 = st.number_input(f"1路出号数 (余数1, 共{len(b_1)}个码)", 0, req_b, def_b1, key="b1")
+        b_req_2 = st.number_input(f"2路出号数 (余数2, 共{len(b_2)}个码)", 0, req_b, def_b2, key="b2")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 逻辑验证与实时计算
-    sum_f, sum_b = (rf0 + rf1 + rf2), (rb0 + rb1 + rb2)
-    
+    # 逻辑校验与计算
+    sum_f = f_req_0 + f_req_1 + f_req_2
+    sum_b = b_req_0 + b_req_1 + b_req_2
+
     if sum_f != req_f:
-        st.warning(f"💡 注意：当前前区 012路分配总和为 {sum_f}，必须等于 {req_f} 才能计算。")
+        st.error(f"⚠️ **前区数量错误！** 0/1/2路的总和必须等于 {req_f}，目前总和是 {sum_f}。")
     elif sum_b != req_b:
-        st.warning(f"💡 注意：当前后区 012路分配总和为 {sum_b}，必须等于 {req_b} 才能计算。")
+        st.error(f"⚠️ **后区数量错误！** 0/1/2路的总和必须等于 {req_b}，目前总和是 {sum_b}。")
     else:
-        # 核心排列组合公式应用
-        ans_f = nCr(len(f0), rf0) * nCr(len(f1), rf1) * nCr(len(f2), rf2)
-        ans_b = nCr(len(b0), rb0) * nCr(len(b1), rb1) * nCr(len(b2), rb2)
-        total_bets = ans_f * ans_b
+        # 基于组合公式进行核心运算
+        comb_f0 = calculate_bets(len(f_0), f_req_0)
+        comb_f1 = calculate_bets(len(f_1), f_req_1)
+        comb_f2 = calculate_bets(len(f_2), f_req_2)
         
-        # 结果展示区
-        st.markdown(f"""
-        <div class="result-card">
-            <h3 style='margin:0; color:#00E676;'>🎯 筛选计算结果</h3>
-            <p style='font-size:1.2rem; margin-top:10px;'>
-                形态：前区({rf0}:{rf1}:{rf2}) + 后区({rb0}:{rb1}:{rb2})<br>
-                剩余注数：<span style='color:#FFD700; font-weight:bold;'>{total_bets}</span> 组<br>
-                单倍投入：<span style='color:#FF4B2B; font-weight:bold;'>{total_bets * 2}</span> 元
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+        comb_b0 = calculate_bets(len(b_0), b_req_0)
+        comb_b1 = calculate_bets(len(b_1), b_req_1)
+        comb_b2 = calculate_bets(len(b_2), b_req_2)
         
-        # 实战出号
-        if total_bets > 0:
-            if st.button("🎲 随机提取 5 组符合此形态的号码"):
-                st.write("---")
-                for i in range(min(5, total_bets)):
-                    p_f = sorted(random.sample(f0, rf0) + random.sample(f1, rf1) + random.sample(f2, rf2))
-                    p_b = sorted(random.sample(b0, rb0) + random.sample(b1, rb1) + random.sample(b2, rb2))
-                    f_txt = " ".join([str(x).zfill(2) for x in p_f])
-                    b_txt = " ".join([str(x).zfill(2) for x in p_b])
-                    st.code(f"精选第{i+1}组: [ {f_txt} ] + [ {b_txt} ]")
+        total_filtered_bets = comb_f0 * comb_f1 * comb_f2 * comb_b0 * comb_b1 * comb_b2
+        
+        st.success(f"⚡ 根据独立事件乘法原理，当前【前区 {f_req_0}:{f_req_1}:{f_req_2} / 后区 {b_req_0}:{b_req_1}:{b_req_2}】形态下的理论极限为：**{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
+        
+        # 自动生成推荐号码
+        if total_filtered_bets > 0:
+            if st.button("🎲 提取 5 注符合该 012路 形态的实战号码"):
+                st.markdown("#### 🎯 精选实战结果：")
+                for i in range(min(5, total_filtered_bets)):
+                    pick_f = sorted(random.sample(f_0, f_req_0) + random.sample(f_1, f_req_1) + random.sample(f_2, f_req_2))
+                    pick_b = sorted(random.sample(b_0, b_req_0) + random.sample(b_1, b_req_1) + random.sample(b_2, b_req_2))
+                    
+                    f_str = " ".join([f"{str(x).zfill(2)}" for x in pick_f])
+                    b_str = " ".join([f"{str(x).zfill(2)}" for x in pick_b])
+                    st.code(f"第 {i+1} 注: [ {f_str} ] + [ {b_str} ]")
 
 else:
-    st.warning("⚠️ **数据仓库空虚！** 请在侧边栏上传 xls/csv 激活指挥控制台。")
+    st.warning("⚠️ **脱机金库暂无数据！** 请通过侧边栏上传 xls/csv。")
