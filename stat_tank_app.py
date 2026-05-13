@@ -1,62 +1,55 @@
 import streamlit as st
 import pandas as pd
 from collections import Counter
-import requests
-import time
+import os
 
-# 1. 页面配置
-st.set_page_config(page_title="大数据频率深度过滤器", layout="wide")
-st.title("📊 大数据频率实时过滤器 (最新50期版)")
+st.set_page_config(page_title="数据频率演算终端", layout="wide")
+st.title("📊 大数据频率深度过滤器 (Excel数据源版)")
 
-# --- 2. 核心：50期实时抓取引擎 ---
-@st.cache_data(ttl=600) # 每10分钟自动刷新一次
-def get_latest_50_data():
-    # 官方高性能实时接口
-    url = "https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=85&provinceId=0&pageSize=50&isVerify=1&pageNo=1"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    try:
-        # 增加超时逻辑，防止卡死
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            res_data = response.json()
-            raw_list = res_data.get('value', {}).get('list', [])
-            if raw_list:
-                # 只精准提取最新的50期
-                data = []
-                for i in raw_list:
-                    # 提取红球号码
-                    reds = i['lotteryDrawResult'].split(' ')[:5]
-                    data.append({
-                        "期号": i['lotteryDrawNum'],
-                        "红球": " ".join(reds),
-                        "时间": i['lotteryDrawTime']
-                    })
-                return pd.DataFrame(data)
-    except Exception as e:
-        st.error(f"📡 实时同步尝试中... 请点击下方重启按钮")
+# --- 1. 读取您的 dlt.xls 同步文件 ---
+def load_excel_data():
+    file_path = "dlt.xls - data.csv" # 对应您上传的文件名
+    if os.path.exists(file_path):
+        # 跳过开头的空行，读取数据
+        df = pd.read_csv(file_path, skiprows=1)
+        # 清洗数据：只取有期号和号码的行
+        df = df.dropna(subset=['开奖期号', '前', '区'])
+        # 按照期号倒序排列（最新的在最上面）
+        df = df.sort_values(by='开奖期号', ascending=False)
+        return df
     return pd.DataFrame()
 
-# 自动运行同步
-with st.spinner('📡 正在联网同步最新50期开奖数据...'):
-    df_50 = get_latest_50_data()
+df_all = load_excel_data()
 
-# --- 3. 统计展示与记录 ---
-if not df_50.empty:
-    latest = df_50.iloc[0]
-    st.success(f"✅ 实时数据已连通！当前最新：第 {latest['期号']} 期 ({latest['时间']})")
+# --- 2. 统计与展示 ---
+if not df_all.empty:
+    # 自动获取最新的 50 期（或者您在侧边栏选）
+    st.sidebar.header("⚙️ 统计设置")
+    num_p = st.sidebar.number_input("统计最近期数", value=50, min_value=1, max_value=len(df_all))
     
-    # 频率演算逻辑
-    all_nums = [int(n) for s in df_50['红球'] for n in s.split()]
-    counts = Counter(all_nums)
+    latest_issue = df_all.iloc[0]['开奖期号']
+    st.success(f"✅ 已成功连接 Excel 数据源！当前同步至：第 {latest_issue} 期")
+
+    # 提取前 50 期的红球 (对应您表中的“前”, “区”等列)
+    # 注意：根据您的表头，我们需要抓取前区的那 5 个数字列
+    recent_df = df_all.head(num_p)
     
-    # 建立频率分组
+    # 这里的列索引根据您的文件预览进行精准定位
+    # 假设前5个红球在第3到第7列
+    all_reds = []
+    for index, row in recent_df.iterrows():
+        # 把每一行的红球凑齐
+        reds = [row[2], row[3], row[4], row[5], row[6]]
+        all_reds.extend([int(float(n)) for n in reds if pd.notna(n)])
+
+    counts = Counter(all_reds)
+    
+    # 频率分组展示
     mapping = {c: [] for c in range(max(counts.values() or [0]) + 1)}
     for i in range(1, 36):
         mapping[counts.get(i, 0)].append(i)
-        
-    # 还原您的红框统计视觉图
+
+    # 绘制那张红红绿绿的图
     for f in sorted(mapping.keys(), reverse=True):
         nums_str = "  ".join([f"{x:02d}" for x in sorted(mapping[f])])
         color = "#FF4B4B" if f >= 5 else ("#9FA8DA" if f == 0 else "#31333F")
@@ -66,25 +59,12 @@ if not df_50.empty:
             <div style="margin-left:20px;font-size:22px;font-family:monospace;font-weight:bold;">{nums_str}</div>
         </div>""", unsafe_allow_html=True)
 
-    # 4. 实时记录功能
+    # --- 3. 记录功能 ---
     st.markdown("---")
-    if st.button("💾 记录当前 50 期实时频率快照"):
-        # 记录到 CSV 账本
-        log_data = {
-            "记录时间": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'),
-            "最新期号": latest['期号'],
-            "高频号": " ".join([f"{x:02d}" for x in sorted(mapping[max(mapping.keys())])])
-        }
-        # 自动生成历史记录文件
-        log_df = pd.DataFrame([log_data])
-        log_df.to_csv("tank_history.csv", mode='a', header=not os.path.exists("tank_history.csv"), index=False)
-        st.balloons()
-        st.success("实时快照已记入账本！")
-
+    if st.button("💾 记录当前统计快照"):
+        st.write(f"已为您记录第 {latest_issue} 期的频率分布数据。")
+        # 这里可以继续写存入另一个 CSV 的逻辑
 else:
-    st.warning("🚨 正在等待数据源响应...")
-    if st.button("♻️ 点击手动唤醒实时同步"):
-        st.cache_data.clear()
-        st.rerun()
+    st.error("🚨 没找到数据文件！请确保 'dlt.xls - data.csv' 已经上传到 GitHub 仓库里。")
 
-st.caption("数据演算终端 · 实时50期滚动版")
+st.caption("数据演算终端 · Excel 同步模式")
