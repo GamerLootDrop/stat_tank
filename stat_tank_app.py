@@ -37,48 +37,41 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 超级数据抓取引擎 (新增全球代理节点穿透)
+# 2. 数据引擎 (本地金库模式) - 缓存24小时 (86400秒)
 # ==========================================
-@st.cache_data(ttl=1800)
-def fetch_latest_data(lottery_code, limit=100):
-    # 加入时间戳，防止被沿途的网络节点缓存旧数据
+# 注意：移除了 limit 参数，强制一次性拉取100条进本地仓库，滑块不再触发请求！
+@st.cache_data(ttl=86400)
+def fetch_base_data(lottery_code):
+    limit = 100 
     timestamp = int(time.time())
     target_url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={limit}&sort=0&_={timestamp}"
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml"
     }
     
     html = ""
-    
-    # 【引擎 1】尝试直接强突
+    # 1. 尝试直连
     try:
         res = requests.get(target_url, headers=headers, timeout=8)
         res.encoding = 'utf-8'
-        if '<tbody id="tdata">' in res.text:
-            html = res.text
-    except:
-        pass
+        if '<tbody id="tdata">' in res.text: html = res.text
+    except: pass
         
-    # 【引擎 2】如果被防火墙拦截，启动 AllOrigins 代理节点绕过
+    # 2. 如果直连失败，用代理穿透
     if not html:
         try:
             encoded_url = urllib.parse.quote(target_url)
-            # 使用公用 CORS/代理 节点作为跳板
             proxy_url = f"https://api.allorigins.win/raw?url={encoded_url}"
             res2 = requests.get(proxy_url, timeout=15)
             res2.encoding = 'utf-8'
-            if '<tbody id="tdata">' in res2.text:
-                html = res2.text
-        except Exception as e:
-            st.error(f"代理穿透也失败了: {e}")
+            if '<tbody id="tdata">' in res2.text: html = res2.text
+        except Exception: pass
             
-    # 如果两种方式都失败，返回空数据
-    if not html:
-        return pd.DataFrame()
+    if not html: return pd.DataFrame()
         
-    # === 开始暴力解析网页数据 ===
+    # 3. 解析清洗
     try:
         tbody_match = re.search(r'<tbody id="tdata">(.*?)</tbody>', html, re.DOTALL)
         if not tbody_match: return pd.DataFrame()
@@ -91,12 +84,9 @@ def fetch_latest_data(lottery_code, limit=100):
             tds = re.findall(r'<td.*?>(.*?)</td>', tr, re.DOTALL)
             clean_tds = [re.sub(r'<.*?>', '', td).strip() for td in tds]
             
-            # 强化校验：期号长度必须大于4
             if len(clean_tds) >= 8 and clean_tds[0].isdigit() and len(clean_tds[0]) > 4:
-                try:
-                    start_idx = 2 if int(clean_tds[1]) > 100 else 1
-                except:
-                    start_idx = 1
+                try: start_idx = 2 if int(clean_tds[1]) > 100 else 1
+                except: start_idx = 1
                     
                 if lottery_code == 'dlt':
                     parsed_data.append({
@@ -113,16 +103,13 @@ def fetch_latest_data(lottery_code, limit=100):
                         '后1': int(clean_tds[start_idx+6])
                     })
                     
-        if parsed_data:
-            return pd.DataFrame(parsed_data).head(limit)
+        if parsed_data: return pd.DataFrame(parsed_data)
             
-    except Exception as e:
-        st.error(f"数据清洗异常: {e}")
-        
+    except Exception: pass
     return pd.DataFrame()
 
 # ==========================================
-# 3. 核心统计与功能逻辑
+# 3. 核心运算逻辑
 # ==========================================
 def calculate_frequencies(df, is_dlt=True):
     if is_dlt:
@@ -139,13 +126,15 @@ def calculate_frequencies(df, is_dlt=True):
     
     for i in range(1, front_max + 1): front_counts.setdefault(i, 0)
     for i in range(1, back_max + 1): back_counts.setdefault(i, 0)
-        
     return front_counts, back_counts
+
+def calculate_bets(n, r):
+    if r > n or r < 0: return 0
+    return math.comb(n, r)
 
 def generate_text_report(title, front_counts, back_counts, is_dlt):
     report = f"========== {title} ==========\n\n"
     report += f"[前区统计 (1-{'35' if is_dlt else '33'})]\n"
-    
     def format_dict(counts_dict):
         freq_group = {}
         for num, freq in counts_dict.items():
@@ -155,16 +144,11 @@ def generate_text_report(title, front_counts, back_counts, is_dlt):
             nums = ",".join([str(n).zfill(2) for n in sorted(freq_group[freq])])
             res += f"{freq}次: {nums}\n"
         return res
-
     report += format_dict(front_counts) + "\n"
     report += f"[后区统计 (1-{'12' if is_dlt else '16'})]\n"
     report += format_dict(back_counts)
     report += "\n========================================="
     return report
-
-def calculate_bets(n, r):
-    if r > n or r < 0: return 0
-    return math.comb(n, r)
 
 # ==========================================
 # 4. 侧边栏：操作控制台
@@ -173,29 +157,42 @@ with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
     st.title("控制台设置")
     
+    # 🎯 核心杀手锏：手动联网按钮
+    if st.button("🔄 手动联网同步最新开奖", type="primary", use_container_width=True):
+        st.cache_data.clear() # 一键清空本地保险柜的旧数据
+        st.success("✅ 本地缓存已清除，正在突破防线重新拉取...")
+        time.sleep(1)
+        st.rerun() # 强制刷新页面重新拉取
+        
+    st.markdown("---")
+    
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
-    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=100, value=70, step=10)
+    period_limit = st.slider("📅 本地数据深度扫描 (期)", min_value=10, max_value=100, value=70, step=10)
     
     st.markdown("---")
-    st.caption("🔧 引擎状态：双擎直连 + 代理穿透")
-    st.caption("🛡️ 颜色校对：精准模式开启")
+    st.caption("🔒 引擎状态：本地金库运算模式")
+    st.caption("🛡️ 防封策略：已切断滑块与网络的绑定")
 
 is_dlt = "DLT" in lottery_type
+lottery_code = 'dlt' if is_dlt else 'ssq'
 
 # ==========================================
 # 5. 主画面：高级数据看板
 # ==========================================
 st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
 
-# 显示加载提示，因为走代理可能会多花1-2秒
-with st.spinner('📡 正在强行突破网络限制，获取最新数据...'):
-    df = fetch_latest_data('dlt' if is_dlt else 'ssq', limit=period_limit)
+# 1. 抓取完整的100期基础数据（被缓存拦截，不会频繁发网络请求）
+with st.spinner('📡 检查本地数据金库...'):
+    df_base = fetch_base_data(lottery_code)
 
-if not df.empty:
-    latest_issue = df.iloc[0]['期号']
-    st.success(f"🟢 **网络联机及代理穿透成功！当前最新期号**：第 {latest_issue} 期")
+if not df_base.empty:
+    # 2. 根据滑块在本地切分数据，毫秒级响应
+    df = df_base.head(period_limit)
     
-    with st.expander("🔍 展开查看最近 10 期真实开奖数据 (校验防伪)"):
+    latest_issue = df_base.iloc[0]['期号']
+    st.info(f"💡 **当前使用的本地数据最新期号为**：第 {latest_issue} 期。(如需更新，请点击左侧红色同步按钮)")
+    
+    with st.expander("🔍 展开查看最近 10 期详细数据"):
         st.dataframe(df.head(10).astype(str), use_container_width=True)
 
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
@@ -237,11 +234,8 @@ if not df.empty:
     st.markdown("---")
     
     calc_col, export_col = st.columns([1.5, 1])
-    
     with calc_col:
         st.subheader("🧮 专用投资计算器 (复式/胆拖测算)")
-        st.info("💡 请输入你打算挑选的号码个数，系统将自动算出总注数和花费。")
-        
         req_f = 5 if is_dlt else 6
         req_b = 2 if is_dlt else 1
         max_f = 35 if is_dlt else 33
@@ -254,23 +248,14 @@ if not df.empty:
             sel_back = st.number_input(f"选取后区个数 (至少{req_b}个)", min_value=req_b, max_value=max_b, value=req_b)
             
         bets = calculate_bets(sel_front, req_f) * calculate_bets(sel_back, req_b)
-        cost = bets * 2
-        st.success(f"💰 按照此方案，共计 **{bets}** 注，需要投入 **{cost}** 元。（基础倍数）")
+        st.success(f"💰 共计 **{bets}** 注，需投入 **{bets * 2}** 元。（基础倍数）")
 
     with export_col:
         st.subheader("🖨️ 打印与导出中心")
         report_title = f"{lottery_type} 近 {period_limit} 期走势报告"
         text_report = generate_text_report(report_title, front_counts, back_counts, is_dlt)
         
-        st.download_button(
-            label="📥 一键下载完整统计报告 (.txt)",
-            data=text_report,
-            file_name=f"{lottery_type}_report.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
-        st.caption("或者直接在下方框内 Ctrl+A 全选复制：")
-        st.code(text_report, language="text")
+        st.download_button("📥 下载统计报告 (.txt)", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
 
 else:
-    st.error("🚨 无法获取数据！请检查当前网络连接或平台服务状态。这通常是因为目标网站的防御系统过高。")
+    st.error("🚨 首次启动需要获取数据，但被防御系统拦截。请稍后点击左侧【手动联网同步最新开奖】按钮重试！")
