@@ -31,7 +31,20 @@ st.markdown("""
     }
     .stat-row { display: flex; align-items: center; margin-bottom: 10px; background: #1E1E1E; padding: 10px; border-radius: 8px;}
     .filter-box { background: #1E1E1E; padding: 25px; border-radius: 12px; border: 1px solid #444; margin-top: 10px;}
-    .pool-display { font-size: 0.85rem; color: #aaa; margin-bottom: 10px; font-family: monospace; }
+    
+    /* 重点修复：号码池 UI 升级，干掉死黑背景 */
+    .pool-display { 
+        font-size: 0.85rem; 
+        color: #90CAF9; /* 浅蓝色文字，更具科技感 */
+        background: rgba(255, 255, 255, 0.05) !important; /* 强制覆盖自带黑底，改为极淡的透明白 */
+        padding: 8px 12px; 
+        border-radius: 6px; 
+        margin-bottom: 15px; 
+        border: 1px solid rgba(255, 255, 255, 0.1); 
+        line-height: 1.6;
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+    }
+    
     .result-card { background: #0E1117; padding: 15px; border-radius: 10px; border-left: 5px solid #00E676; margin-top: 15px; }
 </style>
 """, unsafe_allow_html=True)
