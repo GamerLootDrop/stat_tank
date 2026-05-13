@@ -4,131 +4,152 @@ from collections import Counter
 import os
 import re
 
-# 设置页面
-st.set_page_config(page_title="坦克频率分析终端", layout="wide")
+# 1. 基础配置：深色主题沉浸式体验
+st.set_page_config(page_title="坦克频率终端-尊享版", layout="wide")
 
-# --- 🚀 豪华装修 CSS (深色科技风) ---
+# --- 🚀 顶级黑金 UI 装修 ---
 st.markdown("""
     <style>
+    /* 全局深色底色 */
     .stApp {
-        background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-        color: #ffffff;
+        background: #0a0a12;
+        color: #e0e0e0;
     }
-    .freq-card {
-        background: rgba(255, 255, 255, 0.07);
-        border-radius: 15px;
+    
+    /* 侧边栏彻底黑化美化 */
+    [data-testid="stSidebar"] {
+        background-color: #11111d !important;
+        border-right: 1px solid #333;
+    }
+    [data-testid="stSidebar"] .stMarkdown h2 {
+        color: #ffb400;
+        text-align: center;
+        border-bottom: 2px solid #ffb400;
+        padding-bottom: 10px;
+    }
+    
+    /* 核心频率卡片 */
+    .freq-box {
+        background: linear-gradient(145deg, #1a1a2e, #16213e);
+        border-radius: 12px;
         padding: 20px;
         margin-bottom: 15px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border: 1px solid #2e2e4a;
+        box-shadow: 5px 5px 15px #05050a;
         display: flex;
         align-items: center;
-        transition: transform 0.3s;
     }
-    .freq-card:hover {
-        transform: scale(1.01);
-        background: rgba(255, 255, 255, 0.1);
+    
+    /* 频率标签样式 */
+    .f-label {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #ffb400;
+        min-width: 130px;
+        border-right: 2px solid #333;
+        text-shadow: 0 0 10px rgba(255, 180, 0, 0.3);
     }
-    .freq-label {
-        font-size: 1.4rem;
+    
+    /* 号码球样式 */
+    .ball-row {
+        padding-left: 25px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    .ball {
+        background: #0f3460;
+        color: #00fff2;
+        border-radius: 50%;
+        width: 45px;
+        height: 45px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-weight: bold;
-        min-width: 120px;
-        text-align: center;
-        padding-right: 20px;
-        border-right: 2px solid rgba(255,255,255,0.1);
+        font-size: 1.2rem;
+        border: 1px solid #00fff2;
+        box-shadow: inset 0 0 10px rgba(0, 255, 242, 0.2);
     }
-    .num-display {
-        font-family: 'Consolas', monospace;
-        font-size: 28px;
-        font-weight: bold;
-        color: #00f2fe;
-        padding-left: 30px;
-        letter-spacing: 4px;
-    }
-    .high-f { border-left: 6px solid #ff4b4b; }
-    .high-f .freq-label { color: #ff4b4b; }
-    .mid-f { border-left: 6px solid #f9d423; }
-    .mid-f .freq-label { color: #f9d423; }
-    .zero-f { border-left: 6px solid #6c757d; opacity: 0.6; }
-    .zero-f .freq-label { color: #aaa; }
-    .zero-f .num-display { color: #888; }
+    
+    /* 状态颜色 */
+    .hot { border-left: 8px solid #ff4b4b; }
+    .cold { border-left: 8px solid #4a4e69; opacity: 0.6; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ 坦克数据频率演算大屏")
-st.markdown("---")
+# --- 2. 核心逻辑：强制汉化 ---
+all_f = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
+menu = {}
 
-# --- 1. 扫描文件 (模糊匹配逻辑) ---
-all_files = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
-data_map = {}
+# 只要包含关键字，强制在菜单显示中文
+for f in all_f:
+    low_f = f.lower()
+    if "ssq" in low_f or "双色球" in low_f:
+        menu["🏆 双色球专业分析版"] = f
+    elif "dlt" in low_f or "data" in low_f:
+        menu["💎 大乐透专业分析版"] = f
 
-for f in all_files:
-    fname = f.lower()
-    # 只要名字里带这些词，就强行分类
-    if "ssq" in fname or "双色球" in fname:
-        data_map["🔴 双色球核心数据"] = f
-    elif "dlt" in fname or "data" in fname:
-        data_map["🟢 大乐透核心数据"] = f
+# 如果都没对上，把剩下的文件也列出来，防止漏掉
+for f in all_f:
+    if f not in menu.values():
+        menu[f"📂 未知数据: {f}"] = f
 
-if not data_map:
-    # 如果还是找不到，列出文件夹里所有CSV让用户自己选
-    if all_files:
-        for f in all_files: data_map[f"未知文件: {f}"] = f
-    else:
-        st.error("🚨 文件夹里真的没有 CSV 文件！请确认上传到了 stat_tank 文件夹。")
-
-if data_map:
-    with st.sidebar:
-        st.header("📊 控制台")
-        display_name = st.selectbox("🎯 切换彩种数据：", list(data_map.keys()))
-        num_p = st.sidebar.number_input("📉 统计最近期数：", value=50, min_value=1)
-        st.markdown("---")
-        st.write("已成功适配长文件名读取逻辑")
-
-    target_file = data_map[display_name]
+# --- 3. 侧边栏布局 ---
+with st.sidebar:
+    st.markdown("## 坦克指挥中心")
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    try:
-        # 使用碎石机模式读取
-        with open(target_file, 'r', encoding='utf-8', errors='ignore') as f:
-            lines = f.readlines()
-        
-        is_ssq = "🔴" in display_name
-        ball_count = 6 if is_ssq else 5
-        max_val = 33 if is_ssq else 35
-        
-        all_balls = []
-        count_lines = 0
-        for line in lines[2:]:
-            if count_lines >= num_p: break
-            raw_numbers = re.findall(r'\d+', line)
-            row_numbers = [int(n) for n in raw_numbers if 1 <= int(n) <= max_val]
-            if len(row_numbers) >= ball_count:
-                all_balls.extend(row_numbers[:ball_count])
-                count_lines += 1
+    # 强制中文下拉框
+    choice = st.selectbox("🛸 切换演算频道", list(menu.keys()))
+    current_file = menu[choice]
+    
+    num_p = st.slider("📅 统计期数深度", 5, 200, 50)
+    
+    st.markdown("---")
+    st.write("📊 算法状态: 正常")
+    st.write("📡 数据同步: 实时")
 
-        # --- 2. 炫酷展示 ---
-        counts = Counter(all_balls)
-        if counts:
-            st.markdown(f"### 📡 正在演算：<span style='color:#00f2fe'>{display_name}</span> | <span style='color:#00f2fe'>{count_lines}</span> 期样本", unsafe_allow_html=True)
+# --- 4. 主内容演算 ---
+st.title(f"正在读取：{choice}")
+
+try:
+    with open(current_file, 'r', encoding='utf-8', errors='ignore') as f:
+        lines = f.readlines()
+    
+    is_ssq = "双色球" in choice
+    balls_needed = 6 if is_ssq else 5
+    max_num = 33 if is_ssq else 35
+    
+    all_data = []
+    processed = 0
+    for line in lines[2:]:
+        if processed >= num_p: break
+        # 碎石机提取数字
+        nums = [int(n) for n in re.findall(r'\d+', line) if 1 <= int(n) <= max_num]
+        if len(nums) >= balls_needed:
+            all_data.extend(nums[:balls_needed])
+            processed += 1
+
+    counts = Counter(all_data)
+    if counts:
+        max_f = max(counts.values())
+        for f in range(max_f, -1, -1):
+            target_nums = sorted([i for i in range(1, max_num + 1) if counts.get(i, 0) == f])
+            if not target_nums: continue
             
-            max_f = max(counts.values())
-            for f in range(max_f, -1, -1):
-                nums = sorted([i for i in range(1, max_val + 1) if counts.get(i, 0) == f])
-                if not nums: continue
-                
-                nums_str = " ".join([f"{x:02d}" for x in nums])
-                
-                # 样式判断
-                if f >= 5: style_class = "high-f"
-                elif f == 0: style_class = "zero-f"
-                else: style_class = "mid-f"
-                
-                st.markdown(f"""
-                    <div class="freq-card {style_class}">
-                        <div class="freq-label">{f} 次出现</div>
-                        <div class="num-display">{nums_str}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.warning("⚠️ 该文件内未提取到有效号码。")
-    except Exception as e:
-        st.error(f"解析出错：{e}")
+            style_class = "hot" if f >= 5 else ("cold" if f == 0 else "")
+            
+            # 渲染卡片
+            balls_html = "".join([f'<div class="ball">{n:02d}</div>' for n in target_nums])
+            st.markdown(f"""
+                <div class="freq-box {style_class}">
+                    <div class="f-label">{f} 次出现</div>
+                    <div class="ball-row">{balls_html}</div>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.warning("数据打捞失败，请检查 CSV 格式。")
+
+except Exception as e:
+    st.error(f"终端故障: {e}")
