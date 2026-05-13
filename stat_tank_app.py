@@ -30,7 +30,6 @@ st.markdown("""
         min-width: 80px; text-align: center;
     }
     .stat-row { display: flex; align-items: center; margin-bottom: 10px; background: #1E1E1E; padding: 10px; border-radius: 8px;}
-    .filter-box { background: #1E1E1E; padding: 25px; border-radius: 12px; border: 1px solid #444; margin-top: 10px;}
     .result-card { background: #0E1117; padding: 15px; border-radius: 10px; border-left: 5px solid #00E676; margin-top: 15px; }
 </style>
 """, unsafe_allow_html=True)
@@ -168,51 +167,49 @@ if not df_base.empty:
     b1 = [x for x in range(1, max_b + 1) if x % 3 == 1]
     b2 = [x for x in range(1, max_b + 1) if x % 3 == 2]
 
-    st.markdown('<div class="filter-box">', unsafe_allow_html=True)
-    
-    # 终极镇压黑色背景的内联样式
-    pool_style = "background-color: #262C36; color: #64B5F6; font-family: Arial, sans-serif; font-size: 14px; padding: 10px 12px; border-radius: 6px; border: 1px solid #374151; margin-bottom: 12px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);"
-    
-    # 侧重于前区的UI
+    # --- 彻底抛弃 HTML，使用原生组件 ---
+    st.markdown("#### 🔵 前区配置")
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
         st.markdown("**0路 (余0)**")
-        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in f0])}</div>", unsafe_allow_html=True)
+        st.info(", ".join([str(x).zfill(2) for x in f0]))
         rf0 = st.number_input("前区0路出几个", 0, req_f, 2, key="rf0")
     with fc2:
         st.markdown("**1路 (余1)**")
-        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in f1])}</div>", unsafe_allow_html=True)
+        st.info(", ".join([str(x).zfill(2) for x in f1]))
         rf1 = st.number_input("前区1路出几个", 0, req_f, 2, key="rf1")
     with fc3:
         st.markdown("**2路 (余2)**")
-        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in f2])}</div>", unsafe_allow_html=True)
+        st.info(", ".join([str(x).zfill(2) for x in f2]))
         rf2 = st.number_input("前区2路出几个", 0, req_f, 1 if is_dlt else 2, key="rf2")
 
-    st.markdown("---")
-    # 侧重于后区的UI
+    st.markdown("#### 🟡 后区配置")
     bc1, bc2, bc3 = st.columns(3)
     with bc1:
         st.markdown(f"**后区0路 (共{len(b0)}个)**")
-        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in b0]) if b0 else '无'}</div>", unsafe_allow_html=True)
+        if b0: st.warning(", ".join([str(x).zfill(2) for x in b0]))
+        else: st.warning("本区无号码")
         rb0 = st.number_input("后区0路出几个", 0, req_b, 0 if is_dlt else 0, key="rb0")
     with bc2:
         st.markdown(f"**后区1路 (共{len(b1)}个)**")
-        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in b1]) if b1 else '无'}</div>", unsafe_allow_html=True)
+        if b1: st.warning(", ".join([str(x).zfill(2) for x in b1]))
+        else: st.warning("本区无号码")
         rb1 = st.number_input("后区1路出几个", 0, req_b, 1 if is_dlt else 1, key="rb1")
     with bc3:
         st.markdown(f"**后区2路 (共{len(b2)}个)**")
-        st.markdown(f"<div style='{pool_style}'>{', '.join([str(x).zfill(2) for x in b2]) if b2 else '无'}</div>", unsafe_allow_html=True)
+        if b2: st.warning(", ".join([str(x).zfill(2) for x in b2]))
+        else: st.warning("本区无号码")
         rb2 = st.number_input("后区2路出几个", 0, req_b, 1 if is_dlt else 0, key="rb2")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")
 
     # 逻辑验证与实时计算
     sum_f, sum_b = (rf0 + rf1 + rf2), (rb0 + rb1 + rb2)
     
     if sum_f != req_f:
-        st.warning(f"💡 注意：当前前区 012路分配总和为 {sum_f}，必须等于 {req_f} 才能计算。")
+        st.error(f"💡 注意：当前前区 012路分配总和为 {sum_f}，必须等于 {req_f} 才能计算。")
     elif sum_b != req_b:
-        st.warning(f"💡 注意：当前后区 012路分配总和为 {sum_b}，必须等于 {req_b} 才能计算。")
+        st.error(f"💡 注意：当前后区 012路分配总和为 {sum_b}，必须等于 {req_b} 才能计算。")
     else:
         # 核心排列组合公式应用
         ans_f = nCr(len(f0), rf0) * nCr(len(f1), rf1) * nCr(len(f2), rf2)
@@ -240,7 +237,7 @@ if not df_base.empty:
                     p_b = sorted(random.sample(b0, rb0) + random.sample(b1, rb1) + random.sample(b2, rb2))
                     f_txt = " ".join([str(x).zfill(2) for x in p_f])
                     b_txt = " ".join([str(x).zfill(2) for x in p_b])
-                    st.code(f"精选第{i+1}组: [ {f_txt} ] + [ {b_txt} ]")
+                    st.success(f"精选第 {i+1} 组: [ {f_txt} ] + [ {b_txt} ]")
 
 else:
     st.warning("⚠️ **数据仓库空虚！** 请在侧边栏上传 xls/csv 激活指挥控制台。")
