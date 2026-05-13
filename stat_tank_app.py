@@ -5,13 +5,14 @@ import plotly.express as px
 from collections import Counter
 import re
 import math
+import time
+import urllib.parse
 
 # ==========================================
 # 1. 全局页面配置
 # ==========================================
 st.set_page_config(page_title="坦克指挥控制台", page_icon="🚀", layout="wide")
 
-# 注入自定义 CSS (定义好红、蓝、黄三种球的样式)
 st.markdown("""
 <style>
     .ball-container { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
@@ -36,18 +37,49 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 超级数据抓取引擎 (修复了期号抓取错位的Bug)
+# 2. 超级数据抓取引擎 (新增全球代理节点穿透)
 # ==========================================
 @st.cache_data(ttl=1800)
 def fetch_latest_data(lottery_code, limit=100):
-    url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={limit}&sort=0"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    # 加入时间戳，防止被沿途的网络节点缓存旧数据
+    timestamp = int(time.time())
+    target_url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={limit}&sort=0&_={timestamp}"
     
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    }
+    
+    html = ""
+    
+    # 【引擎 1】尝试直接强突
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.encoding = 'utf-8'
-        html = response.text
+        res = requests.get(target_url, headers=headers, timeout=8)
+        res.encoding = 'utf-8'
+        if '<tbody id="tdata">' in res.text:
+            html = res.text
+    except:
+        pass
         
+    # 【引擎 2】如果被防火墙拦截，启动 AllOrigins 代理节点绕过
+    if not html:
+        try:
+            encoded_url = urllib.parse.quote(target_url)
+            # 使用公用 CORS/代理 节点作为跳板
+            proxy_url = f"https://api.allorigins.win/raw?url={encoded_url}"
+            res2 = requests.get(proxy_url, timeout=15)
+            res2.encoding = 'utf-8'
+            if '<tbody id="tdata">' in res2.text:
+                html = res2.text
+        except Exception as e:
+            st.error(f"代理穿透也失败了: {e}")
+            
+    # 如果两种方式都失败，返回空数据
+    if not html:
+        return pd.DataFrame()
+        
+    # === 开始暴力解析网页数据 ===
+    try:
         tbody_match = re.search(r'<tbody id="tdata">(.*?)</tbody>', html, re.DOTALL)
         if not tbody_match: return pd.DataFrame()
             
@@ -59,7 +91,7 @@ def fetch_latest_data(lottery_code, limit=100):
             tds = re.findall(r'<td.*?>(.*?)</td>', tr, re.DOTALL)
             clean_tds = [re.sub(r'<.*?>', '', td).strip() for td in tds]
             
-            # 强化校验：期号长度必须大于4，避免把序号(如1, 2, 3)当成期号
+            # 强化校验：期号长度必须大于4
             if len(clean_tds) >= 8 and clean_tds[0].isdigit() and len(clean_tds[0]) > 4:
                 try:
                     start_idx = 2 if int(clean_tds[1]) > 100 else 1
@@ -85,12 +117,12 @@ def fetch_latest_data(lottery_code, limit=100):
             return pd.DataFrame(parsed_data).head(limit)
             
     except Exception as e:
-        st.error(f"联机抓取发生异常: {e}")
+        st.error(f"数据清洗异常: {e}")
         
     return pd.DataFrame()
 
 # ==========================================
-# 3. 核心统计逻辑
+# 3. 核心统计与功能逻辑
 # ==========================================
 def calculate_frequencies(df, is_dlt=True):
     if is_dlt:
@@ -110,7 +142,6 @@ def calculate_frequencies(df, is_dlt=True):
         
     return front_counts, back_counts
 
-# 用于生成可复制/打印的纯文本报告
 def generate_text_report(title, front_counts, back_counts, is_dlt):
     report = f"========== {title} ==========\n\n"
     report += f"[前区统计 (1-{'35' if is_dlt else '33'})]\n"
@@ -131,7 +162,6 @@ def generate_text_report(title, front_counts, back_counts, is_dlt):
     report += "\n========================================="
     return report
 
-# 组合数学公式 (用于计算器)
 def calculate_bets(n, r):
     if r > n or r < 0: return 0
     return math.comb(n, r)
@@ -144,10 +174,10 @@ with st.sidebar:
     st.title("控制台设置")
     
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
-    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=100, value=30, step=10)
+    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=100, value=70, step=10)
     
     st.markdown("---")
-    st.caption("🔧 系统状态：公网直连模式")
+    st.caption("🔧 引擎状态：双擎直连 + 代理穿透")
     st.caption("🛡️ 颜色校对：精准模式开启")
 
 is_dlt = "DLT" in lottery_type
@@ -157,19 +187,19 @@ is_dlt = "DLT" in lottery_type
 # ==========================================
 st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
 
-df = fetch_latest_data('dlt' if is_dlt else 'ssq', limit=period_limit)
+# 显示加载提示，因为走代理可能会多花1-2秒
+with st.spinner('📡 正在强行突破网络限制，获取最新数据...'):
+    df = fetch_latest_data('dlt' if is_dlt else 'ssq', limit=period_limit)
 
 if not df.empty:
     latest_issue = df.iloc[0]['期号']
-    st.success(f"🟢 **网络联机成功！当前抓取到的最新期号为**：第 {latest_issue} 期")
+    st.success(f"🟢 **网络联机及代理穿透成功！当前最新期号**：第 {latest_issue} 期")
     
-    # --- 【新增】历史数据校验看板 ---
     with st.expander("🔍 展开查看最近 10 期真实开奖数据 (校验防伪)"):
         st.dataframe(df.head(10).astype(str), use_container_width=True)
 
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
     
-    # --- 动态色彩配置 ---
     if is_dlt:
         front_color_class = "ball-blue"
         back_color_class = "ball-yellow"
@@ -177,7 +207,6 @@ if not df.empty:
         front_color_class = "ball-red"
         back_color_class = "ball-blue"
 
-    # --- 高频触达矩阵 ---
     st.subheader("🧬 核心出现频次矩阵")
     
     col1, col2 = st.columns(2)
@@ -207,7 +236,6 @@ if not df.empty:
 
     st.markdown("---")
     
-    # --- 【新增】复式投资计算器 & 一键复制打印 ---
     calc_col, export_col = st.columns([1.5, 1])
     
     with calc_col:
@@ -245,4 +273,4 @@ if not df.empty:
         st.code(text_report, language="text")
 
 else:
-    st.error("🚨 无法获取数据！请检查当前网络连接或平台服务状态。")
+    st.error("🚨 无法获取数据！请检查当前网络连接或平台服务状态。这通常是因为目标网站的防御系统过高。")
