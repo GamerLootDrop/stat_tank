@@ -4,152 +4,144 @@ from collections import Counter
 import os
 import re
 
-# 1. 基础配置：深色主题沉浸式体验
-st.set_page_config(page_title="坦克频率终端-尊享版", layout="wide")
+# 1. 顶级配置
+st.set_page_config(page_title="指挥官专用数据终端", layout="wide")
 
-# --- 🚀 顶级黑金 UI 装修 ---
+# --- 🚀 纯黑金沉浸式 UI 装修 ---
 st.markdown("""
     <style>
-    /* 全局深色底色 */
+    /* 1. 强制主背景 */
     .stApp {
-        background: #0a0a12;
-        color: #e0e0e0;
+        background: radial-gradient(circle, #1b2735 0%, #090a0f 100%);
+        color: #ffffff;
     }
     
-    /* 侧边栏彻底黑化美化 */
+    /* 2. 彻底改造左侧面板 */
     [data-testid="stSidebar"] {
-        background-color: #11111d !important;
-        border-right: 1px solid #333;
+        background: rgba(10, 10, 20, 0.95) !important;
+        border-right: 2px solid #333;
+        box-shadow: 10px 0 30px rgba(0,0,0,0.5);
     }
+    
+    /* 3. 侧边栏内的文字和组件 */
     [data-testid="stSidebar"] .stMarkdown h2 {
-        color: #ffb400;
-        text-align: center;
-        border-bottom: 2px solid #ffb400;
+        color: #00d2ff;
+        font-family: "Microsoft YaHei";
+        text-shadow: 0 0 10px rgba(0,210,255,0.5);
+        border-bottom: 2px solid #00d2ff;
         padding-bottom: 10px;
     }
     
-    /* 核心频率卡片 */
+    /* 4. 频率卡片 - 尊享金属质感 */
     .freq-box {
-        background: linear-gradient(145deg, #1a1a2e, #16213e);
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 15px;
-        border: 1px solid #2e2e4a;
-        box-shadow: 5px 5px 15px #05050a;
+        background: linear-gradient(145deg, #16213e, #0f3460);
+        border-radius: 20px;
+        padding: 25px;
+        margin-bottom: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 8px 8px 20px #05050a, -2px -2px 10px rgba(255,255,255,0.05);
         display: flex;
         align-items: center;
     }
     
-    /* 频率标签样式 */
+    /* 5. 频率数字 */
     .f-label {
-        font-size: 1.5rem;
-        font-weight: 800;
-        color: #ffb400;
-        min-width: 130px;
-        border-right: 2px solid #333;
-        text-shadow: 0 0 10px rgba(255, 180, 0, 0.3);
+        font-size: 1.8rem;
+        font-weight: 900;
+        color: #f9d423; /* 黄金色 */
+        min-width: 150px;
+        text-align: center;
+        border-right: 3px solid rgba(255,255,255,0.1);
     }
     
-    /* 号码球样式 */
-    .ball-row {
-        padding-left: 25px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-    }
+    /* 6. 号码球效果 */
     .ball {
-        background: #0f3460;
-        color: #00fff2;
+        background: radial-gradient(circle at 30% 30%, #00f2fe, #0077be);
+        color: white;
         border-radius: 50%;
-        width: 45px;
-        height: 45px;
+        width: 50px;
+        height: 50px;
         display: flex;
         align-items: center;
         justify-content: center;
         font-weight: bold;
-        font-size: 1.2rem;
-        border: 1px solid #00fff2;
-        box-shadow: inset 0 0 10px rgba(0, 255, 242, 0.2);
+        font-size: 1.3rem;
+        margin: 0 8px;
+        box-shadow: 0 5px 15px rgba(0,242,254,0.4);
+        border: 2px solid #ffffff;
     }
     
-    /* 状态颜色 */
-    .hot { border-left: 8px solid #ff4b4b; }
-    .cold { border-left: 8px solid #4a4e69; opacity: 0.6; }
+    .hot { border-left: 10px solid #ff416c; }
+    .cold { border-left: 10px solid #485563; opacity: 0.5; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. 核心逻辑：强制汉化 ---
-all_f = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
-menu = {}
+# --- 2. 文件强行识别与汉化 ---
+all_files = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
+menu_data = {}
 
-# 只要包含关键字，强制在菜单显示中文
-for f in all_f:
-    low_f = f.lower()
-    if "ssq" in low_f or "双色球" in low_f:
-        menu["🏆 双色球专业分析版"] = f
-    elif "dlt" in low_f or "data" in low_f:
-        menu["💎 大乐透专业分析版"] = f
-
-# 如果都没对上，把剩下的文件也列出来，防止漏掉
-for f in all_f:
-    if f not in menu.values():
-        menu[f"📂 未知数据: {f}"] = f
+for f in all_files:
+    # 模糊识别
+    if "ssq" in f.lower() or "双色球" in f:
+        menu_data["🔴 双色球·大数据分析中心"] = f
+    elif "dlt" in f.lower() or "data" in f:
+        menu_data["🟢 大乐透·大数据分析中心"] = f
+    else:
+        menu_data[f"📂 其它数据: {f}"] = f
 
 # --- 3. 侧边栏布局 ---
 with st.sidebar:
-    st.markdown("## 坦克指挥中心")
+    st.markdown("## 坦克指挥控制台")
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 强制中文下拉框
-    choice = st.selectbox("🛸 切换演算频道", list(menu.keys()))
-    current_file = menu[choice]
+    # 这里是您要的中文选项
+    select_label = st.selectbox("🛸 切换演算频道", list(menu_data.keys()))
+    target_csv = menu_data[select_label]
     
-    num_p = st.slider("📅 统计期数深度", 5, 200, 50)
-    
+    num_p = st.slider("📅 深度扫描期数", 5, 200, 50)
     st.markdown("---")
-    st.write("📊 算法状态: 正常")
-    st.write("📡 数据同步: 实时")
+    st.write("🔧 系统状态: 极佳")
+    st.write("🛡️ 加固逻辑: 碎石机3.0版")
 
-# --- 4. 主内容演算 ---
-st.title(f"正在读取：{choice}")
+# --- 4. 主演算逻辑 ---
+st.markdown(f"### 🚀 当前正在执行：{select_label}")
 
 try:
-    with open(current_file, 'r', encoding='utf-8', errors='ignore') as f:
+    with open(target_csv, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.readlines()
     
-    is_ssq = "双色球" in choice
-    balls_needed = 6 if is_ssq else 5
+    is_ssq = "双色球" in select_label
+    balls_limit = 6 if is_ssq else 5
     max_num = 33 if is_ssq else 35
     
-    all_data = []
-    processed = 0
+    # 暴力提取
+    data_pool = []
+    processed_count = 0
     for line in lines[2:]:
-        if processed >= num_p: break
-        # 碎石机提取数字
+        if processed_count >= num_p: break
         nums = [int(n) for n in re.findall(r'\d+', line) if 1 <= int(n) <= max_num]
-        if len(nums) >= balls_needed:
-            all_data.extend(nums[:balls_needed])
-            processed += 1
+        if len(nums) >= balls_limit:
+            data_pool.extend(nums[:balls_limit])
+            processed_count += 1
 
-    counts = Counter(all_data)
+    counts = Counter(data_pool)
     if counts:
-        max_f = max(counts.values())
-        for f in range(max_f, -1, -1):
-            target_nums = sorted([i for i in range(1, max_num + 1) if counts.get(i, 0) == f])
-            if not target_nums: continue
+        # 按照出现次数从高到低展示
+        for f in range(max(counts.values()), -1, -1):
+            target_list = sorted([i for i in range(1, max_num + 1) if counts.get(i, 0) == f])
+            if not target_list: continue
             
-            style_class = "hot" if f >= 5 else ("cold" if f == 0 else "")
+            box_class = "hot" if f >= 5 else ("cold" if f == 0 else "")
+            balls_html = "".join([f'<div class="ball">{n:02d}</div>' for n in target_list])
             
-            # 渲染卡片
-            balls_html = "".join([f'<div class="ball">{n:02d}</div>' for n in target_nums])
             st.markdown(f"""
-                <div class="freq-box {style_class}">
+                <div class="freq-box {box_class}">
                     <div class="f-label">{f} 次出现</div>
-                    <div class="ball-row">{balls_html}</div>
+                    <div style="display: flex; flex-wrap: wrap;">{balls_html}</div>
                 </div>
             """, unsafe_allow_html=True)
     else:
-        st.warning("数据打捞失败，请检查 CSV 格式。")
+        st.warning("数据扫描完毕，未发现有效号码。")
 
 except Exception as e:
-    st.error(f"终端故障: {e}")
+    st.error(f"终端运行异常: {e}")
