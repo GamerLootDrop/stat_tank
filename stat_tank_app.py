@@ -37,9 +37,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 数据引擎 (本地金库模式) - 缓存24小时 (86400秒)
+# 2. 终极数据引擎 (全球代理节点轮询矩阵)
 # ==========================================
-# 注意：移除了 limit 参数，强制一次性拉取100条进本地仓库，滑块不再触发请求！
 @st.cache_data(ttl=86400)
 def fetch_base_data(lottery_code):
     limit = 100 
@@ -47,31 +46,55 @@ def fetch_base_data(lottery_code):
     target_url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={limit}&sort=0&_={timestamp}"
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml"
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
     }
     
+    # 💥 核心突破口：多重代理跳板轮询机制
+    proxy_nodes = [
+        "",  # 节点1：云端直连强突
+        "https://api.codetabs.com/v1/proxy?quest=", # 节点2：Codetabs 高匿节点
+        "https://corsproxy.io/?", # 节点3：CorsProxy 节点
+    ]
+    
     html = ""
-    # 1. 尝试直连
-    try:
-        res = requests.get(target_url, headers=headers, timeout=8)
-        res.encoding = 'utf-8'
-        if '<tbody id="tdata">' in res.text: html = res.text
-    except: pass
-        
-    # 2. 如果直连失败，用代理穿透
+    
+    # 引擎启动：逐个节点尝试突破
+    for node in proxy_nodes:
+        try:
+            if node == "":
+                req_url = target_url
+            elif "corsproxy" in node:
+                req_url = node + urllib.parse.quote(target_url)
+            else:
+                req_url = node + target_url
+                
+            res = requests.get(req_url, headers=headers, timeout=12)
+            res.encoding = 'utf-8'
+            
+            # 严格防伪校验：确保拿到的是数据表格，而不是安全验证网页
+            if '<tbody id="tdata">' in res.text and 'class="t_tr1"' in res.text:
+                html = res.text
+                break # 突破成功！立刻跳出循环
+        except:
+            continue # 失败则无缝切换下一个节点
+            
+    # 节点4（终极备用）：AllOrigins JSON 数据提取模式
     if not html:
         try:
-            encoded_url = urllib.parse.quote(target_url)
-            proxy_url = f"https://api.allorigins.win/raw?url={encoded_url}"
-            res2 = requests.get(proxy_url, timeout=15)
-            res2.encoding = 'utf-8'
-            if '<tbody id="tdata">' in res2.text: html = res2.text
-        except Exception: pass
+            json_url = f"https://api.allorigins.win/get?url={urllib.parse.quote(target_url)}"
+            res = requests.get(json_url, timeout=15)
+            data = res.json()
+            if '<tbody id="tdata">' in data.get('contents', ''):
+                html = data['contents']
+        except:
+            pass
             
-    if not html: return pd.DataFrame()
+    # 如果所有节点全部阵亡（极小概率）
+    if not html: 
+        return pd.DataFrame()
         
-    # 3. 解析清洗
+    # --- 开始解析强行拖回来的数据 ---
     try:
         tbody_match = re.search(r'<tbody id="tdata">(.*?)</tbody>', html, re.DOTALL)
         if not tbody_match: return pd.DataFrame()
@@ -106,6 +129,7 @@ def fetch_base_data(lottery_code):
         if parsed_data: return pd.DataFrame(parsed_data)
             
     except Exception: pass
+    
     return pd.DataFrame()
 
 # ==========================================
@@ -157,12 +181,12 @@ with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
     st.title("控制台设置")
     
-    # 🎯 核心杀手锏：手动联网按钮
+    # 手动联网按钮
     if st.button("🔄 手动联网同步最新开奖", type="primary", use_container_width=True):
-        st.cache_data.clear() # 一键清空本地保险柜的旧数据
-        st.success("✅ 本地缓存已清除，正在突破防线重新拉取...")
+        st.cache_data.clear()
+        st.success("✅ 指令已下达！正在启动代理矩阵轮询，请稍候...")
         time.sleep(1)
-        st.rerun() # 强制刷新页面重新拉取
+        st.rerun()
         
     st.markdown("---")
     
@@ -170,8 +194,8 @@ with st.sidebar:
     period_limit = st.slider("📅 本地数据深度扫描 (期)", min_value=10, max_value=100, value=70, step=10)
     
     st.markdown("---")
-    st.caption("🔒 引擎状态：本地金库运算模式")
-    st.caption("🛡️ 防封策略：已切断滑块与网络的绑定")
+    st.caption("🔒 引擎状态：全球节点矩阵轮询中...")
+    st.caption("🛡️ 防封策略：4重跳板自动切换 + 本地金库")
 
 is_dlt = "DLT" in lottery_type
 lottery_code = 'dlt' if is_dlt else 'ssq'
@@ -181,18 +205,17 @@ lottery_code = 'dlt' if is_dlt else 'ssq'
 # ==========================================
 st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
 
-# 1. 抓取完整的100期基础数据（被缓存拦截，不会频繁发网络请求）
-with st.spinner('📡 检查本地数据金库...'):
+# 加载提示文案也升级了
+with st.spinner('📡 正在启动代理矩阵，轮询尝试突破防火墙获取数据，这可能需要几秒钟...'):
     df_base = fetch_base_data(lottery_code)
 
 if not df_base.empty:
-    # 2. 根据滑块在本地切分数据，毫秒级响应
     df = df_base.head(period_limit)
-    
     latest_issue = df_base.iloc[0]['期号']
-    st.info(f"💡 **当前使用的本地数据最新期号为**：第 {latest_issue} 期。(如需更新，请点击左侧红色同步按钮)")
     
-    with st.expander("🔍 展开查看最近 10 期详细数据"):
+    st.info(f"💡 **当前使用的本地缓存数据最新期号为**：第 {latest_issue} 期。(如需更新，请点击左侧红色同步按钮)")
+    
+    with st.expander("🔍 展开查看最近 10 期真实详细数据"):
         st.dataframe(df.head(10).astype(str), use_container_width=True)
 
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
@@ -235,7 +258,7 @@ if not df_base.empty:
     
     calc_col, export_col = st.columns([1.5, 1])
     with calc_col:
-        st.subheader("🧮 专用投资计算器 (复式/胆拖测算)")
+        st.subheader("🧮 专用投资计算器")
         req_f = 5 if is_dlt else 6
         req_b = 2 if is_dlt else 1
         max_f = 35 if is_dlt else 33
@@ -258,4 +281,4 @@ if not df_base.empty:
         st.download_button("📥 下载统计报告 (.txt)", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
 
 else:
-    st.error("🚨 首次启动需要获取数据，但被防御系统拦截。请稍后点击左侧【手动联网同步最新开奖】按钮重试！")
+    st.error("🚨 防御级别过高，所有跳板节点均被拦截！请稍后重试，或等待网络波动恢复。")
