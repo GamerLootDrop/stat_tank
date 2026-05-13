@@ -4,81 +4,94 @@ from collections import Counter
 import os
 import re
 
-# 设置页面：加入自定义 CSS 样式
+# 设置页面
 st.set_page_config(page_title="坦克频率分析终端", layout="wide")
 
-# --- 🚀 豪华装修 CSS ---
+# --- 🚀 豪华装修 CSS (深色科技风) ---
 st.markdown("""
     <style>
-    .main {
-        background-color: #f0f2f6;
-    }
     .stApp {
-        background: linear-gradient(135deg, #1e1e2f 0%, #2d2d44 100%);
+        background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
         color: #ffffff;
     }
     .freq-card {
-        background: rgba(255, 255, 255, 0.05);
-        border-left: 5px solid #ff4b4b;
-        padding: 15px 25px;
+        background: rgba(255, 255, 255, 0.07);
+        border-radius: 15px;
+        padding: 20px;
         margin-bottom: 15px;
-        border-radius: 10px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         display: flex;
         align-items: center;
+        transition: transform 0.3s;
+    }
+    .freq-card:hover {
+        transform: scale(1.01);
+        background: rgba(255, 255, 255, 0.1);
     }
     .freq-label {
-        font-size: 1.2rem;
+        font-size: 1.4rem;
         font-weight: bold;
-        min-width: 100px;
-        color: #ff4b4b;
+        min-width: 120px;
+        text-align: center;
+        padding-right: 20px;
+        border-right: 2px solid rgba(255,255,255,0.1);
     }
     .num-display {
-        font-family: 'Courier New', monospace;
-        font-size: 24px;
-        font-weight: 900;
-        letter-spacing: 5px;
-        color: #00ffcc;
-        margin-left: 30px;
+        font-family: 'Consolas', monospace;
+        font-size: 28px;
+        font-weight: bold;
+        color: #00f2fe;
+        padding-left: 30px;
+        letter-spacing: 4px;
     }
-    .zero-freq { border-left: 5px solid #6c757d; }
-    .zero-freq .freq-label { color: #aaa; }
-    .zero-freq .num-display { color: #6c757d; }
+    .high-f { border-left: 6px solid #ff4b4b; }
+    .high-f .freq-label { color: #ff4b4b; }
+    .mid-f { border-left: 6px solid #f9d423; }
+    .mid-f .freq-label { color: #f9d423; }
+    .zero-f { border-left: 6px solid #6c757d; opacity: 0.6; }
+    .zero-f .freq-label { color: #aaa; }
+    .zero-f .num-display { color: #888; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ 坦克频率实时演算大屏")
+st.title("🛡️ 坦克数据频率演算大屏")
 st.markdown("---")
 
-# --- 1. 扫描文件并汉化 ---
-all_files = os.listdir('.')
+# --- 1. 扫描文件 (模糊匹配逻辑) ---
+all_files = [f for f in os.listdir('.') if f.lower().endswith('.csv')]
 data_map = {}
+
 for f in all_files:
-    if f.lower().endswith('.csv'):
-        if "ssq" in f.lower() or "双色球" in f:
-            data_map["🔴 双色球数据终端"] = f
-        elif "dlt" in f.lower() or "data" in f:
-            data_map["🟢 大乐透数据终端"] = f
+    fname = f.lower()
+    # 只要名字里带这些词，就强行分类
+    if "ssq" in fname or "双色球" in fname:
+        data_map["🔴 双色球核心数据"] = f
+    elif "dlt" in fname or "data" in fname:
+        data_map["🟢 大乐透核心数据"] = f
 
 if not data_map:
-    st.error("🚨 找不着弹药（CSV文件）！请确认已上传到 stat_tank 文件夹。")
-else:
-    # 2. 侧边栏：美化配置
+    # 如果还是找不到，列出文件夹里所有CSV让用户自己选
+    if all_files:
+        for f in all_files: data_map[f"未知文件: {f}"] = f
+    else:
+        st.error("🚨 文件夹里真的没有 CSV 文件！请确认上传到了 stat_tank 文件夹。")
+
+if data_map:
     with st.sidebar:
         st.header("📊 控制台")
-        display_name = st.selectbox("🎯 切换彩种：", list(data_map.keys()))
-        num_p = st.number_input("📉 统计最近期数：", value=50, min_value=1)
+        display_name = st.selectbox("🎯 切换彩种数据：", list(data_map.keys()))
+        num_p = st.sidebar.number_input("📉 统计最近期数：", value=50, min_value=1)
         st.markdown("---")
-        st.info("提示：系统已自动去除小数点及乱码。")
+        st.write("已成功适配长文件名读取逻辑")
 
     target_file = data_map[display_name]
     
     try:
-        # 使用碎石机模式提取数据
+        # 使用碎石机模式读取
         with open(target_file, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
         
-        is_ssq = "双色球" in display_name
+        is_ssq = "🔴" in display_name
         ball_count = 6 if is_ssq else 5
         max_val = 33 if is_ssq else 35
         
@@ -92,12 +105,11 @@ else:
                 all_balls.extend(row_numbers[:ball_count])
                 count_lines += 1
 
-        # --- 3. 结果展示 ---
+        # --- 2. 炫酷展示 ---
         counts = Counter(all_balls)
         if counts:
-            st.write(f"正在分析：{display_name} | 期数规模：{count_lines}期")
+            st.markdown(f"### 📡 正在演算：<span style='color:#00f2fe'>{display_name}</span> | <span style='color:#00f2fe'>{count_lines}</span> 期样本", unsafe_allow_html=True)
             
-            # 按频率从高到低排列
             max_f = max(counts.values())
             for f in range(max_f, -1, -1):
                 nums = sorted([i for i in range(1, max_val + 1) if counts.get(i, 0) == f])
@@ -105,21 +117,18 @@ else:
                 
                 nums_str = " ".join([f"{x:02d}" for x in nums])
                 
-                # 区分高频、中频、遗漏样式
-                card_class = "freq-card"
-                if f == 0: card_class += " zero-freq"
+                # 样式判断
+                if f >= 5: style_class = "high-f"
+                elif f == 0: style_class = "zero-f"
+                else: style_class = "mid-f"
                 
                 st.markdown(f"""
-                    <div class="{card_class}">
+                    <div class="freq-card {style_class}">
                         <div class="freq-label">{f} 次出现</div>
                         <div class="num-display">{nums_str}</div>
                     </div>
                 """, unsafe_allow_html=True)
-            
-            if st.button("📸 记录当前快照"):
-                st.balloons()
         else:
-            st.warning("⚠️ 数据源为空，请检查文件内容。")
-
+            st.warning("⚠️ 该文件内未提取到有效号码。")
     except Exception as e:
         st.error(f"解析出错：{e}")
