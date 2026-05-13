@@ -31,6 +31,14 @@ st.markdown("""
     }
     .stat-row { display: flex; align-items: center; margin-bottom: 10px; background: #1E1E1E; padding: 10px; border-radius: 8px;}
     .filter-box { background: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333;}
+    .filter-box { background: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333;}
+    
+    /* 屏蔽所有跳转和水印 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    [data-testid="stHeader"] {display: none;}
+    .stDeployButton {display:none;}
 </style>
 """, unsafe_allow_html=True)
 
