@@ -6,7 +6,7 @@ import os
 import random
 
 # ==========================================
-# 1. 全局页面配置
+# 1. 全局页面配置 (完全保留你的极简防黑框 UI)
 # ==========================================
 st.set_page_config(page_title="坦克指挥控制台", page_icon="🚀", layout="wide")
 
@@ -31,16 +31,15 @@ st.markdown("""
     }
     .stat-row { display: flex; align-items: center; margin-bottom: 10px; background: #1E1E1E; padding: 10px; border-radius: 8px;}
     .filter-box { background: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333;}
-    .filter-box { background: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333;}
     
-    /* 1. 彻底封死顶部区域：禁止点击、高度归零 */
+    /* 彻底封死顶部区域：禁止点击、高度归零 */
     [data-testid="stHeader"], .stApp > header {
         display: none !important;
         pointer-events: none !important;
         height: 0px !important;
     }
     
-    /* 2. 深度抹除所有官方图标和菜单按钮 */
+    /* 深度抹除所有官方图标和菜单按钮 */
     #MainMenu, footer, .stDeployButton, .stAppDeployButton, [data-testid="stToolbar"] {
         display: none !important;
         visibility: hidden !important;
@@ -51,7 +50,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 智能脱机读取引擎 
+# 2. 智能暴力清洗引擎 (新装载：解决统计不准)
 # ==========================================
 @st.cache_data
 def load_local_data(lottery_code, uploaded_file=None):
@@ -70,39 +69,46 @@ def load_local_data(lottery_code, uploaded_file=None):
     
     try:
         if hasattr(file_source, 'seek'): file_source.seek(0)
-        def read_data(src, **kwargs):
-            if is_excel:
-                try: return pd.read_excel(src, **kwargs)
-                except: 
-                    if hasattr(src, 'seek'): src.seek(0)
-                    return pd.read_csv(src, sep='\t', **kwargs)
-            else:
-                return pd.read_csv(src, encoding_errors='ignore', **kwargs)
-
-        df_test = read_data(file_source, nrows=1)
-        if '前1' in df_test.columns:
-            if hasattr(file_source, 'seek'): file_source.seek(0)
-            df = read_data(file_source)
-            df = df.sort_values(by='期号', ascending=False).reset_index(drop=True)
-            return df
+        # 暴力读取：无视表头，全当字符串读入，防止错位
+        if is_excel:
+            df_raw = pd.read_excel(file_source, header=None, dtype=str)
         else:
-            if hasattr(file_source, 'seek'): file_source.seek(0)
-            if lottery_code == 'dlt':
-                cols_to_use, col_names = [0, 2, 3, 4, 5, 6, 7, 8], ['期号', '前1', '前2', '前3', '前4', '前5', '后1', '后2']
-            else:
-                cols_to_use, col_names = [0, 2, 3, 4, 5, 6, 7, 8], ['期号', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
-            df_raw = read_data(file_source, skiprows=2, header=None, usecols=cols_to_use)
-            df_raw.columns = col_names
-            df_raw = df_raw.dropna(subset=['前1', '后1'])
-            df_raw['期号'] = df_raw['期号'].astype(str).str.replace(r'\.0$', '', regex=True)
-            for col in col_names:
-                if col != '期号': df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0).astype(int)
-            return df_raw.sort_values(by='期号', ascending=False).reset_index(drop=True)
+            df_raw = pd.read_csv(file_source, encoding_errors='ignore', header=None, dtype=str)
+
+        # 智能锁定列 (抓取第0列期号，第1列日期，以及开奖号)
+        cols_to_use = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        if lottery_code == 'dlt':
+            col_names = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2']
+        else:
+            col_names = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
+            
+        df_raw = df_raw.iloc[:, cols_to_use]
+        df_raw.columns = col_names
+
+        # 暴力清洗开奖号码列：转为数字，非数字变 NaN，然后清理掉
+        df_raw['前1'] = pd.to_numeric(df_raw['前1'], errors='coerce')
+        df_raw = df_raw.dropna(subset=['前1']) 
+        
+        # 期号去杂质，确保排序正确
+        df_raw['期号'] = df_raw['期号'].astype(str).str.replace(r'\D', '', regex=True)
+        df_raw['期号'] = pd.to_numeric(df_raw['期号'], errors='coerce').fillna(0).astype(int)
+        
+        # 尝试解析日期以供"按星期"走势使用
+        df_raw['日期_解析'] = pd.to_datetime(df_raw['日期'], errors='coerce')
+        df_raw['星期'] = df_raw['日期_解析'].dt.dayofweek # 0是周一，6是周日
+
+        for col in col_names:
+            if col not in ['期号', '日期']:
+                df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0).astype(int)
+                
+        # 严格过滤掉非法开奖行
+        df_raw = df_raw[(df_raw['前1'] > 0) & (df_raw['前1'] <= 35)]
+        return df_raw.sort_values(by='期号', ascending=False).reset_index(drop=True)
     except Exception as e:
         return pd.DataFrame()
 
 # ==========================================
-# 3. 核心运算逻辑
+# 3. 核心运算与形态扫描逻辑 (保留 + 升级)
 # ==========================================
 def calculate_frequencies(df, is_dlt=True):
     if is_dlt:
@@ -119,6 +125,28 @@ def calculate_frequencies(df, is_dlt=True):
 def calculate_bets(n, r):
     return math.comb(n, r) if r <= n and r >= 0 else 0
 
+# 【新装载】深度形态扫描器 (重号/连号)
+def scan_advanced_patterns(df_slice, df_full, is_dlt):
+    front_cols = ['前1', '前2', '前3', '前4', '前5'] if is_dlt else ['前1', '前2', '前3', '前4', '前5', '前6']
+    repeat_count = 0
+    consecutive_count = 0
+    
+    for idx, row in df_slice.iterrows():
+        nums = sorted([row[c] for c in front_cols])
+        # 扫描连号
+        has_consecutive = any(nums[i+1] - nums[i] == 1 for i in range(len(nums)-1))
+        if has_consecutive: consecutive_count += 1
+            
+        # 扫描重号 (需到总库比对上一期)
+        full_idx = df_full.index[df_full['期号'] == row['期号']].tolist()
+        if full_idx and full_idx[0] + 1 < len(df_full):
+            prev_row = df_full.iloc[full_idx[0] + 1]
+            prev_nums = set([prev_row[c] for c in front_cols])
+            if len(set(nums).intersection(prev_nums)) > 0:
+                repeat_count += 1
+                
+    return repeat_count, consecutive_count
+
 def generate_text_report(title, front_counts, back_counts, is_dlt):
     report = f"========== {title} ==========\n\n[前区统计]\n"
     def format_dict(counts_dict):
@@ -133,15 +161,20 @@ def generate_text_report(title, front_counts, back_counts, is_dlt):
     return report
 
 # ==========================================
-# 4. 侧边栏
+# 4. 侧边栏 (战术选项升级)
 # ==========================================
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
     st.title("控制台设置")
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
-    period_limit = st.slider("📅 深度扫描期数", min_value=10, max_value=200, value=70, step=10)
+    
+    # 【升级】顾客要求的固定战术期数
+    period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=4)
+    if period_limit == 5: st.caption("💡 战术提示: 5期极短线，适合单看后区蓝球走势。")
+    if period_limit == 29: st.caption("💡 战术提示: 29期中短线，适合红蓝双区联动复盘。")
+    
     st.markdown("---")
-    st.markdown("### 🗄️ 数据库管理 (Admin)")
+    st.markdown("### 🗄️ 数据库管理")
     uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据", type=['csv', 'xls', 'xlsx'])
 
 is_dlt = "DLT" in lottery_type
@@ -150,23 +183,60 @@ req_f, req_b = (5, 2) if is_dlt else (6, 1)
 max_f, max_b = (35, 12) if is_dlt else (33, 16)
 
 # ==========================================
-# 5. 主画面
+# 5. 主画面 (搭载全新战术雷达)
 # ==========================================
-st.header(f"🚀 雷达监测：{lottery_type} (近 {period_limit} 期走势)")
-
 df_base = load_local_data(lottery_code, uploaded_file)
 
 if not df_base.empty:
-    df = df_base.head(period_limit)
     latest_issue = str(df_base.iloc[0]['期号'])
     
-    with st.expander(f"🟢 数据加载成功！当前最新期号: 第 {latest_issue} 期 (展开查看CSV)"):
+    st.header(f"🚀 雷达监测：{lottery_type} (最新 {latest_issue} 期)")
+    
+    # 【新装载】多维战术过滤面板
+    st.markdown("### 📡 开启高级过滤雷达")
+    filter_mode = st.radio("选择分析维度", ["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"], horizontal=True)
+    
+    if filter_mode == "历史同期对比":
+        # 抓取最新期号的后3位作为同期标识
+        suffix = latest_issue[-3:]
+        df_filtered = df_base[df_base['期号'].astype(str).str.endswith(suffix)]
+        st.info(f"📅 **已锁定历史同期**：正在为您分析历年来尾号为 **{suffix}** 的所有开奖数据。")
+    elif filter_mode == "星期独立走势":
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            if is_dlt:
+                week_target = st.selectbox("选择开奖日", ["周一", "周三", "周六"])
+                week_map = {"周一": 0, "周三": 2, "周六": 5}
+            else:
+                week_target = st.selectbox("选择开奖日", ["周二", "周四", "周日"])
+                week_map = {"周二": 1, "周四": 3, "周日": 6}
+        df_filtered = df_base[df_base['星期'] == week_map[week_target]]
+        st.info(f"📆 **已开启星期独立走势**：正在深度挖掘 **{week_target}** 的特有规律。")
+    else:
+        df_filtered = df_base
+        st.info("连贯走势模式运行中...")
+
+    # 执行期数切割
+    df = df_filtered.head(period_limit)
+    actual_periods = len(df)
+    
+    with st.expander(f"🟢 数据加载成功！共捕获 {actual_periods} 期精准数据 (展开校验)"):
         st.dataframe(df.head(10).astype(str), use_container_width=True)
 
+    # 【新装载】重号 / 连号扫描仪
+    st.markdown("---")
+    st.subheader("🕵️‍♂️ 形态深度扫描引擎")
+    repeat_num, cons_num = scan_advanced_patterns(df, df_base, is_dlt)
+    rc1, rc2 = st.columns(2)
+    rc1.warning(f"🔁 **前区重号规律**：在这 {actual_periods} 期中，有 **{repeat_num}** 期开出了上一期的落号。(发生概率: **{repeat_num/actual_periods*100:.1f}%**)")
+    rc2.error(f"🔗 **前区连号规律**：在这 {actual_periods} 期中，有 **{cons_num}** 期出现了连号组合。(发生概率: **{cons_num/actual_periods*100:.1f}%**)")
+
+    # (保留) 频次矩阵渲染
+    st.markdown("---")
+    st.subheader("🧬 核心出现频次矩阵")
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
     front_color_class, back_color_class = ("ball-blue", "ball-yellow") if is_dlt else ("ball-red", "ball-blue")
 
-    st.subheader("🧬 核心出现频次矩阵")
     col1, col2 = st.columns(2)
     def render_balls(counts_dict, ball_class):
         freq_group = {}
@@ -187,9 +257,7 @@ if not df_base.empty:
 
     st.markdown("---")
     
-    # ==========================================
-    # 🌟 基础计算器 (保留区)
-    # ==========================================
+    # (保留) 基础计算器与导出
     calc_col, export_col = st.columns([1.5, 1])
     with calc_col:
         st.subheader("🧮 基础复式计算器")
@@ -201,25 +269,21 @@ if not df_base.empty:
 
     with export_col:
         st.subheader("🖨️ 导出走势报告")
-        text_report = generate_text_report(f"{lottery_type} 近 {period_limit} 期走势", front_counts, back_counts, is_dlt)
+        text_report = generate_text_report(f"{lottery_type} {filter_mode} ({actual_periods}期)", front_counts, back_counts, is_dlt)
         st.download_button("📥 下载统计 txt", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
 
     st.markdown("---")
     
-    # ==========================================
-    # 📐 012路形态过滤引擎 (新加装区)
-    # ==========================================
+    # (完全保留) 012路形态过滤引擎 
     st.subheader("📐 012路形态过滤引擎 (基于概率论与组合数学)")
     st.caption("运用你提供的公式文档，通过排列组合 $C_n^k$ 和独立事件乘法原理，精准计算特定 012路 形态的注数！")
     
-    # 引入文档中的数学公式
     with st.expander("📝 展开查看底层计算公式参考"):
         st.markdown("基于《计算公式000.docx》：")
         st.latex(r"C_n^k = \frac{n!}{k!(n-k)!} \quad \text{(组合数)}")
         st.latex(r"P(AB) = P(A)P(B) \quad \text{(独立事件与乘法原理)}")
         st.markdown("总注数 = $C_{N_{f0}}^{k_{f0}} \\times C_{N_{f1}}^{k_{f1}} \\times C_{N_{f2}}^{k_{f2}} \\times C_{N_{b0}}^{k_{b0}} \\times C_{N_{b1}}^{k_{b1}} \\times C_{N_{b2}}^{k_{b2}}$")
 
-    # 构建 0/1/2 路池
     f_0 = [x for x in range(1, max_f + 1) if x % 3 == 0]
     f_1 = [x for x in range(1, max_f + 1) if x % 3 == 1]
     f_2 = [x for x in range(1, max_f + 1) if x % 3 == 2]
@@ -231,7 +295,6 @@ if not df_base.empty:
     st.markdown('<div class="filter-box">', unsafe_allow_html=True)
     f_col1, f_col2 = st.columns(2)
     
-    # 智能预设默认分配方案
     def_f0, def_f1, def_f2 = (2, 2, 1) if is_dlt else (2, 2, 2)
     def_b0, def_b1, def_b2 = (0, 1, 1) if is_dlt else (0, 1, 0)
     
@@ -248,7 +311,6 @@ if not df_base.empty:
         b_req_2 = st.number_input(f"2路出号数 (余数2, 共{len(b_2)}个码)", 0, req_b, def_b2, key="b2")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 逻辑校验与计算
     sum_f = f_req_0 + f_req_1 + f_req_2
     sum_b = b_req_0 + b_req_1 + b_req_2
 
@@ -257,7 +319,6 @@ if not df_base.empty:
     elif sum_b != req_b:
         st.error(f"⚠️ **后区数量错误！** 0/1/2路的总和必须等于 {req_b}，目前总和是 {sum_b}。")
     else:
-        # 基于组合公式进行核心运算
         comb_f0 = calculate_bets(len(f_0), f_req_0)
         comb_f1 = calculate_bets(len(f_1), f_req_1)
         comb_f2 = calculate_bets(len(f_2), f_req_2)
@@ -270,7 +331,6 @@ if not df_base.empty:
         
         st.success(f"⚡ 根据独立事件乘法原理，当前【前区 {f_req_0}:{f_req_1}:{f_req_2} / 后区 {b_req_0}:{b_req_1}:{b_req_2}】形态下的理论极限为：**{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
         
-        # 自动生成推荐号码
         if total_filtered_bets > 0:
             if st.button("🎲 提取 5 注符合该 012路 形态的实战号码"):
                 st.markdown("#### 🎯 精选实战结果：")
