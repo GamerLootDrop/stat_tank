@@ -6,6 +6,7 @@ import os
 import random
 import requests
 from bs4 import BeautifulSoup
+import time  # 引入时间戳，用来击穿网站的反爬缓存
 
 # ==========================================
 # 1. 全局页面配置 (绝对保留你最喜欢的极简防黑框 UI)
@@ -65,7 +66,9 @@ if not st.session_state.authenticated:
 # ==========================================
 def fetch_latest_data(lottery_code, local_latest_issue):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=30"
+    # 🚨 终极绝招：加上时间戳，击穿网站的 CDN 幽灵缓存，强制给最新数据！
+    url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=30&_t={int(time.time())}"
+    
     try:
         response = requests.get(url, headers=headers, timeout=5)
         response.encoding = 'utf-8'
@@ -138,7 +141,7 @@ def load_local_data(lottery_code, uploaded_file=None):
     return df_final, new_count
 
 # ==========================================
-# 3. 核心运算与深度扫描逻辑 (带上最新加的重号连号)
+# 3. 核心运算与深度扫描逻辑
 # ==========================================
 def calculate_frequencies(df, is_dlt=True):
     if is_dlt:
@@ -180,16 +183,21 @@ def generate_text_report(title, front_counts, back_counts, is_dlt):
     return report
 
 # ==========================================
-# 4. 侧边栏 (战术期数回归！)
+# 4. 侧边栏 (带有强力清除缓存刷新功能)
 # ==========================================
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
     st.title("控制台设置")
     st.markdown("🔗 **[🔙 返回主站系统](/)**") 
+    
+    # 🎯 这是为你加的强制刷新按钮！
+    if st.button("🔄 强制刷新云端最新数据", use_container_width=True):
+        load_local_data.clear() # 瞬间清空缓存
+        st.rerun() # 强制重启刷新
+
     st.markdown("---")
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
     
-    # 【找回丢失的功能】固定的战术期数下拉框
     period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=4)
     if period_limit == 5: st.caption("💡 战术提示: 5期极短线，适合单看后区蓝球走势。")
     if period_limit == 29: st.caption("💡 战术提示: 29期中短线，适合红蓝双区联动复盘。")
@@ -217,7 +225,6 @@ if not df_base.empty:
     if new_count > 0:
         st.success(f"⚡ 自动抓取成功：已自动补齐最新的 **{new_count}** 期数据！当前最新: 第 **{latest_issue}** 期。")
         
-    # 【找回丢失的功能】高级战术过滤雷达
     st.markdown("### 📡 开启高级过滤雷达")
     filter_mode = st.radio("选择分析维度", ["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"], horizontal=True)
     
@@ -242,7 +249,6 @@ if not df_base.empty:
     with st.expander(f"🟢 数据加载成功！共捕获 {actual_periods} 期精准数据 (展开查看CSV)"):
         st.dataframe(df.head(10).astype(str), use_container_width=True)
 
-    # 【找回丢失的功能】重号连号深度扫描
     st.markdown("---")
     st.subheader("🕵️‍♂️ 形态深度扫描引擎")
     repeat_num, cons_num = scan_advanced_patterns(df, df_base, is_dlt)
@@ -276,7 +282,6 @@ if not df_base.empty:
 
     st.markdown("---")
     
-    # 基础计算器与导出
     calc_col, export_col = st.columns([1.5, 1])
     with calc_col:
         st.subheader("🧮 基础复式计算器")
@@ -293,9 +298,6 @@ if not df_base.empty:
 
     st.markdown("---")
     
-    # ==========================================
-    # 📐 012路形态过滤引擎 
-    # ==========================================
     st.subheader("📐 012路形态过滤引擎 (基于概率论与组合数学)")
     st.caption("运用你提供的公式文档，通过排列组合 $C_n^k$ 和独立事件乘法原理，精准计算特定 012路 形态的注数！")
     
