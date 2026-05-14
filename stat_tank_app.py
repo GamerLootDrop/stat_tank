@@ -105,22 +105,40 @@ def fetch_latest_data(lottery_code, local_latest_issue):
 # ==========================================
 @st.cache_data(ttl=300) # 缓存5分钟，防止用户狂点按钮导致封IP
 def get_and_sync_data(lottery_code, uploaded_file):
-    # 1. 读本地库
+    # 1. 读本地库 (修复：全面支持读取云端仓库的 xls 和 csv)
     df_local = pd.DataFrame()
-    source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else None)
+    
+    if uploaded_file:
+        source = uploaded_file
+    elif os.path.exists(f"{lottery_code}.xls"):
+        source = f"{lottery_code}.xls"
+    elif os.path.exists(f"{lottery_code}.xlsx"):
+        source = f"{lottery_code}.xlsx"
+    elif os.path.exists(f"{lottery_code}.csv"):
+        source = f"{lottery_code}.csv"
+    else:
+        source = None
+
     if source:
         try:
-            df_raw = pd.read_excel(source, header=None, dtype=str) if str(source).endswith(('xls','xlsx')) else pd.read_csv(source, encoding_errors='ignore', header=None, dtype=str)
+            if str(source).endswith(('xls','xlsx')):
+                df_raw = pd.read_excel(source, header=None, dtype=str)
+            else:
+                df_raw = pd.read_csv(source, encoding_errors='ignore', header=None, dtype=str)
+                
             cols_use = [0, 1, 2, 3, 4, 5, 6, 7, 8]
             c_names = ['期号','日期','前1','前2','前3','前4','前5','后1','后2'] if lottery_code == 'dlt' else ['期号','日期','前1','前2','前3','前4','前5','前6','后1']
-            df_raw = df_raw.iloc[:, cols_use]; df_raw.columns = c_names
+            
+            df_raw = df_raw.iloc[:, cols_use]
+            df_raw.columns = c_names
             df_raw['前1'] = pd.to_numeric(df_raw['前1'], errors='coerce')
             df_raw = df_raw.dropna(subset=['前1'])
             df_raw['期号'] = df_raw['期号'].astype(str).str.replace(r'\D', '', regex=True)
             df_raw['期号'] = pd.to_numeric(df_raw['期号'], errors='coerce').fillna(0).astype(int)
             for c in c_names[2:]: df_raw[c] = pd.to_numeric(df_raw[c], errors='coerce').fillna(0).astype(int)
             df_local = df_raw[(df_raw['前1']>0)&(df_raw['前1']<=35)].sort_values(by='期号', ascending=False).reset_index(drop=True)
-        except: pass
+        except Exception as e:
+            pass
 
     # 2. 爬虫检查最新并合并
     local_latest = int(df_local.iloc[0]['期号']) if not df_local.empty else 0
