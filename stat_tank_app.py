@@ -62,41 +62,55 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==========================================
-# 2. 智能读取引擎 (防弹清洗 + 自动云端抓取)
+# 2. 智能读取引擎 (已全面重构：精准定位开奖行 + 智能抗扰)
 # ==========================================
 def fetch_latest_data(lottery_code, local_latest_issue):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    # 🚨 终极绝招：加上时间戳，击穿网站的 CDN 幽灵缓存，强制给最新数据！
-    url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=30&_t={int(time.time())}"
+    # 采用高模拟真实浏览器的标头
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    # 强制 limit 扩大到 50 期，确保存量对齐；加入时间戳痛击 CDN 缓存
+    url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=50&_t={int(time.time())}"
     
     try:
-        response = requests.get(url, headers=headers, timeout=5)
+        response = requests.get(url, headers=headers, timeout=10)
         response.encoding = 'utf-8'
         soup = BeautifulSoup(response.text, 'html.parser')
         tbody = soup.find('tbody', id='tdata')
-        if not tbody: return pd.DataFrame()
+        if not tbody: 
+            return pd.DataFrame()
         
         new_data = []
         for tr in tbody.find_all('tr'):
-            if 'class' in tr.attrs: continue
             tds = tr.find_all('td')
-            if len(tds) < 10: continue
+            # 严格屏障：开奖列数通常大于10，小于10的一律属于杂质行
+            if len(tds) < 10: 
+                continue
             
-            issue = int(tds[0].text.strip())
-            if issue <= local_latest_issue: break # 数据已是最新
-            date_str = tds[len(tds)-1].text.strip() # 抓取日期
+            # 清洗期号数据
+            issue_text = tds[0].text.strip()
+            if not issue_text.isdigit():
+                continue
+            issue = int(issue_text)
             
-            if lottery_code == 'dlt':
-                nums = [int(tds[i].text.strip()) for i in range(1, 8)]
-                new_data.append([issue, date_str] + nums)
-            else:
-                nums = [int(tds[i].text.strip()) for i in range(1, 8)]
-                new_data.append([issue, date_str] + nums)
+            # 智能对齐：如果抓取到的期号小于等于本地最新期号，自动跳过（不break，防止数据乱序漏抓）
+            if issue <= local_latest_issue: 
+                continue
+                
+            date_str = tds[len(tds)-1].text.strip()  # 精准锁定右侧开奖日期
+            
+            # 统一提取 1-7 列开奖球号
+            nums = [int(tds[i].text.strip()) for i in range(1, 8)]
+            new_data.append([issue, date_str] + nums)
                 
         if new_data:
             cols = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2'] if lottery_code == 'dlt' else ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
-            return pd.DataFrame(new_data, columns=cols)
-    except Exception: pass
+            df_new = pd.DataFrame(new_data, columns=cols)
+            # 强制按期号倒序排列（最新一期在最上方）
+            return df_new.sort_values(by='期号', ascending=False).reset_index(drop=True)
+            
+    except Exception as e: 
+        pass
     return pd.DataFrame()
 
 @st.cache_data(ttl=300)
@@ -112,7 +126,7 @@ def load_local_data(lottery_code, uploaded_file=None):
             else:
                 df_raw = pd.read_csv(source, encoding_errors='ignore', header=None, dtype=str)
                 
-            cols_use = [0, 1, 2, 3, 4, 5, 6, 7, 8] # 必须带上日期列
+            cols_use = [0, 1, 2, 3, 4, 5, 6, 7, 8]
             c_names = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2'] if lottery_code == 'dlt' else ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
             
             df_raw = df_raw.iloc[:, cols_use]
@@ -135,6 +149,8 @@ def load_local_data(lottery_code, uploaded_file=None):
         df_final = df_local
         
     if not df_final.empty:
+        # 防御性升级：确保合并后全局严格降序排序
+        df_final = df_final.sort_values(by='期号', ascending=False).reset_index(drop=True)
         df_final['日期_解析'] = pd.to_datetime(df_final['日期'], errors='coerce')
         df_final['星期'] = df_final['日期_解析'].dt.dayofweek
         
@@ -190,7 +206,6 @@ with st.sidebar:
     st.title("控制台设置")
     st.markdown("🔗 **[🔙 返回主站系统](/)**") 
     
-    # 🎯 这是为你加的强制刷新按钮！
     if st.button("🔄 强制刷新云端最新数据", use_container_width=True):
         load_local_data.clear() # 瞬间清空缓存
         st.rerun() # 强制重启刷新
@@ -198,7 +213,7 @@ with st.sidebar:
     st.markdown("---")
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
     
-    period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=4)
+    period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=3)
     if period_limit == 5: st.caption("💡 战术提示: 5期极短线，适合单看后区蓝球走势。")
     if period_limit == 29: st.caption("💡 战术提示: 29期中短线，适合红蓝双区联动复盘。")
     
@@ -224,6 +239,8 @@ if not df_base.empty:
     
     if new_count > 0:
         st.success(f"⚡ 自动抓取成功：已自动补齐最新的 **{new_count}** 期数据！当前最新: 第 **{latest_issue}** 期。")
+    else:
+        st.info(f"🟢 联网雷达连接正常。当前数据库已是最新状态：最新期号 第 **{latest_issue}** 期。")
         
     st.markdown("### 📡 开启高级过滤雷达")
     filter_mode = st.radio("选择分析维度", ["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"], horizontal=True)
@@ -246,8 +263,8 @@ if not df_base.empty:
     df = df_filtered.head(period_limit)
     actual_periods = len(df)
     
-    with st.expander(f"🟢 数据加载成功！共捕获 {actual_periods} 期精准数据 (展开查看CSV)"):
-        st.dataframe(df.head(10).astype(str), use_container_width=True)
+    with st.expander(f"🟢 数据加载成功！共捕获 {actual_periods} 期精准数据 (展开查看明细)"):
+        st.dataframe(df.astype(str), use_container_width=True)
 
     st.markdown("---")
     st.subheader("🕵️‍♂️ 形态深度扫描引擎")
