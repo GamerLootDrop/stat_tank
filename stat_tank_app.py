@@ -62,58 +62,69 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==========================================
-# 2. 智能读取引擎 (已全面重构：精准定位开奖行 + 智能抗扰)
+# 2. 智能读取引擎 (防封锁伪装 + 雷达诊断控制)
 # ==========================================
 def fetch_latest_data(lottery_code, local_latest_issue):
-    # 采用高模拟真实浏览器的标头
+    # 清空旧的诊断日志
+    if f"err_{lottery_code}" in st.session_state:
+        del st.session_state[f"err_{lottery_code}"]
+
+    # 深度伪装：加入高级防盗链 Referer 和标准浏览器语言标头
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': f'https://datachart.500.com/{lottery_code}/history/history.shtml',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
     }
-    # 强制 limit 扩大到 50 期，确保存量对齐；加入时间戳痛击 CDN 缓存
     url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=50&_t={int(time.time())}"
     
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=8)
+        
+        # 诊断拦截：如果状态码不是200，说明被网站防火墙拒绝了
+        if response.status_code != 200:
+            st.session_state[f"err_{lottery_code}"] = f"目标网站拒绝连接 (错误码: {response.status_code})。大概率是因为系统部署在海外云端，被国内防火墙拦截了 IP。"
+            return pd.DataFrame()
+            
         response.encoding = 'utf-8'
         soup = BeautifulSoup(response.text, 'html.parser')
         tbody = soup.find('tbody', id='tdata')
+        
         if not tbody: 
+            st.session_state[f"err_{lottery_code}"] = "页面解析失败：未能定位到数据表格。可能是网站临时改版，或触发了人机验证拦截。"
             return pd.DataFrame()
         
         new_data = []
         for tr in tbody.find_all('tr'):
             tds = tr.find_all('td')
-            # 严格屏障：开奖列数通常大于10，小于10的一律属于杂质行
             if len(tds) < 10: 
                 continue
             
-            # 清洗期号数据
             issue_text = tds[0].text.strip()
             if not issue_text.isdigit():
                 continue
             issue = int(issue_text)
             
-            # 智能对齐：如果抓取到的期号小于等于本地最新期号，自动跳过（不break，防止数据乱序漏抓）
+            # 智能增量：只拿比本地新的期号
             if issue <= local_latest_issue: 
                 continue
                 
-            date_str = tds[len(tds)-1].text.strip()  # 精准锁定右侧开奖日期
-            
-            # 统一提取 1-7 列开奖球号
+            date_str = tds[len(tds)-1].text.strip()
             nums = [int(tds[i].text.strip()) for i in range(1, 8)]
             new_data.append([issue, date_str] + nums)
                 
         if new_data:
             cols = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2'] if lottery_code == 'dlt' else ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
             df_new = pd.DataFrame(new_data, columns=cols)
-            # 强制按期号倒序排列（最新一期在最上方）
             return df_new.sort_values(by='期号', ascending=False).reset_index(drop=True)
             
     except Exception as e: 
-        pass
+        # 捕获真正的网络连接错误（如超时）
+        st.session_state[f"err_{lottery_code}"] = f"网络请求建立失败: {str(e)}。由于云端系统位于海外，访问国内数据源超时。"
+        
     return pd.DataFrame()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60) # 缩短缓存时间，方便调试
 def load_local_data(lottery_code, uploaded_file=None):
     df_local = pd.DataFrame()
     source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else (f"{lottery_code}.xls" if os.path.exists(f"{lottery_code}.xls") else None))
@@ -149,7 +160,6 @@ def load_local_data(lottery_code, uploaded_file=None):
         df_final = df_local
         
     if not df_final.empty:
-        # 防御性升级：确保合并后全局严格降序排序
         df_final = df_final.sort_values(by='期号', ascending=False).reset_index(drop=True)
         df_final['日期_解析'] = pd.to_datetime(df_final['日期'], errors='coerce')
         df_final['星期'] = df_final['日期_解析'].dt.dayofweek
@@ -199,7 +209,7 @@ def generate_text_report(title, front_counts, back_counts, is_dlt):
     return report
 
 # ==========================================
-# 4. 侧边栏 (带有强力清除缓存刷新功能)
+# 4. 侧边栏
 # ==========================================
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
@@ -208,14 +218,12 @@ with st.sidebar:
     
     if st.button("🔄 强制刷新云端最新数据", use_container_width=True):
         load_local_data.clear() # 瞬间清空缓存
-        st.rerun() # 强制重启刷新
+        st.rerun() 
 
     st.markdown("---")
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"])
     
     period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=3)
-    if period_limit == 5: st.caption("💡 战术提示: 5期极短线，适合单看后区蓝球走势。")
-    if period_limit == 29: st.caption("💡 战术提示: 29期中短线，适合红蓝双区联动复盘。")
     
     st.markdown("---")
     st.markdown("### 🗄️ 数据库管理 (Admin)")
@@ -227,12 +235,16 @@ req_f, req_b = (5, 2) if is_dlt else (6, 1)
 max_f, max_b = (35, 12) if is_dlt else (33, 16)
 
 # ==========================================
-# 5. 主画面
+# 5. 主画面区
 # ==========================================
 st.header(f"🚀 雷达监测：{lottery_type}")
 
 with st.spinner("📡 正在连线云端检测最新开奖数据..."):
     df_base, new_count = load_local_data(lottery_code, uploaded_file)
+
+# 🛠️ 核心添加：在左侧边栏顶端实时渲染雷达诊断报告
+if f"err_{lottery_code}" in st.session_state:
+    st.sidebar.error(f"🚨 联网雷达警告：\n{st.session_state[f'err_{lottery_code}']}\n\n💡 应对方案：请通过下方 Admin 投喂最新的本地文件。")
 
 if not df_base.empty:
     latest_issue = str(df_base.iloc[0]['期号'])
@@ -240,7 +252,7 @@ if not df_base.empty:
     if new_count > 0:
         st.success(f"⚡ 自动抓取成功：已自动补齐最新的 **{new_count}** 期数据！当前最新: 第 **{latest_issue}** 期。")
     else:
-        st.info(f"🟢 联网雷达连接正常。当前数据库已是最新状态：最新期号 第 **{latest_issue}** 期。")
+        st.info(f"🟢 当前数据库最新状态：最新期号 第 **{latest_issue}** 期。")
         
     st.markdown("### 📡 开启高级过滤雷达")
     filter_mode = st.radio("选择分析维度", ["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"], horizontal=True)
@@ -259,7 +271,6 @@ if not df_base.empty:
     else:
         df_filtered = df_base
 
-    # 执行切割
     df = df_filtered.head(period_limit)
     actual_periods = len(df)
     
@@ -314,9 +325,7 @@ if not df_base.empty:
         st.download_button("📥 下载统计 txt", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
 
     st.markdown("---")
-    
     st.subheader("📐 012路形态过滤引擎 (基于概率论与组合数学)")
-    st.caption("运用你提供的公式文档，通过排列组合 $C_n^k$ 和独立事件乘法原理，精准计算特定 012路 形态的注数！")
     
     with st.expander("📝 展开查看底层计算公式参考"):
         st.markdown("基于《计算公式000.docx》：")
@@ -367,8 +376,7 @@ if not df_base.empty:
         comb_b2 = calculate_bets(len(b_2), b_req_2)
         
         total_filtered_bets = comb_f0 * comb_f1 * comb_f2 * comb_b0 * comb_b1 * comb_b2
-        
-        st.success(f"⚡ 根据独立事件乘法原理，当前形态下的理论极限为：**{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
+        st.success(f"⚡ 理论极限为：**{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
         
         if total_filtered_bets > 0:
             if st.button("🎲 提取 5 注符合该 012路 形态的实战号码"):
@@ -380,6 +388,5 @@ if not df_base.empty:
                     f_str = " ".join([f"{str(x).zfill(2)}" for x in pick_f])
                     b_str = " ".join([f"{str(x).zfill(2)}" for x in pick_b])
                     st.code(f"第 {i+1} 注: [ {f_str} ] + [ {b_str} ]")
-
 else:
     st.warning("⚠️ **脱机金库暂无数据！** 请通过侧边栏上传 xls/csv。")
