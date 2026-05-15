@@ -6,7 +6,7 @@ import os
 import random
 import requests
 from bs4 import BeautifulSoup
-import time  # 引入时间戳，用来击穿网站的反爬缓存
+import time  
 import re
 import itertools
 
@@ -41,7 +41,7 @@ st.markdown("""
     [data-testid="stHeader"], .stApp > header { display: none !important; pointer-events: none !important; height: 0px !important; }
     #MainMenu, footer, .stDeployButton, .stAppDeployButton, [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
     
-    /* 傻瓜式012路中控UI高亮 */
+    /* 还原图1：高阶控制台UI */
     .ratio-badge { background-color: #262626; border: 1px solid #444; padding: 8px 15px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 16px;}
 </style>
 """, unsafe_allow_html=True)
@@ -59,7 +59,7 @@ if not st.session_state.authenticated:
     with col2:
         pwd = st.text_input("🔒 请输入安全访问口令：", type="password")
         if st.button("验证身份进入系统", use_container_width=True):
-            if pwd == "888888":  # 这里修改密码
+            if pwd == "888888":  
                 st.session_state.authenticated = True
                 st.rerun()
             else:
@@ -77,12 +77,10 @@ def fetch_latest_data(lottery_code, local_latest_issue):
     if f"err_{lottery_code}" in st.session_state:
         del st.session_state[f"err_{lottery_code}"]
 
-    # 🔒 拦截频繁抓取：检查上一次请求成功的时间戳。如果在300秒(5分钟)内且本地有最新数据，则不请求网络
     now_time = time.time()
     last_fetch_key = f"last_fetch_time_{lottery_code}"
     if last_fetch_key in st.session_state:
         if now_time - st.session_state[last_fetch_key] < 300:
-            # 5分钟内不重复连接网络，直接判定为最新，不抓取
             return pd.DataFrame()
 
     urls = [
@@ -116,7 +114,6 @@ def fetch_latest_data(lottery_code, local_latest_issue):
                     continue
                 issue_val = int("20" + iss_str[:10]) if len(iss_str) == 5 else int(iss_str[:10])
                 
-                # 智能增量判定
                 if issue_val <= local_latest_issue:
                     continue
                 
@@ -135,7 +132,6 @@ def fetch_latest_data(lottery_code, local_latest_issue):
                     new_rows.append([issue_val, date_str, core_balls[0], core_balls[1], core_balls[2], core_balls[3], core_balls[4], core_balls[5], core_balls[6]])
             
             if new_rows:
-                # 抓取成功，记录当前时间戳，开启5分钟冷却钟
                 st.session_state[last_fetch_key] = now_time
                 break 
         except Exception:
@@ -193,7 +189,7 @@ def load_local_data(lottery_code, uploaded_file=None):
     return df_final, new_count
 
 # ==========================================
-# 3. 核心运算与深度扫描逻辑
+# 3. 核心运算逻辑
 # ==========================================
 def calculate_frequencies(df, is_dlt=True):
     if is_dlt:
@@ -206,8 +202,6 @@ def calculate_frequencies(df, is_dlt=True):
     for i in range(1, front_max + 1): front_counts.setdefault(i, 0)
     for i in range(1, back_max + 1): back_counts.setdefault(i, 0)
     return front_counts, back_counts
-
-def calculate_bets(n, r): return math.comb(n, r) if r <= n and r >= 0 else 0
 
 def scan_advanced_patterns(df_slice, df_full, is_dlt):
     front_cols = ['前1', '前2', '前3', '前4', '前5'] if is_dlt else ['前1', '前2', '前3', '前4', '前5', '前6']
@@ -234,6 +228,13 @@ def generate_text_report(title, front_counts, back_counts, is_dlt):
     report += format_dict(front_counts) + "\n[后区统计]\n" + format_dict(back_counts) + "\n========================================="
     return report
 
+# 用于012路精确匹配筛选的核心算法
+def check_012_ratio(numbers, target_0, target_1, target_2):
+    c0 = sum(1 for x in numbers if x % 3 == 0)
+    c1 = sum(1 for x in numbers if x % 3 == 1)
+    c2 = sum(1 for x in numbers if x % 3 == 2)
+    return c0 == target_0 and c1 == target_1 and c2 == target_2
+
 # ==========================================
 # 4. 侧边栏
 # ==========================================
@@ -243,7 +244,6 @@ with st.sidebar:
     st.markdown("🔗 **[🔙 返回主站系统](/)**") 
     
     if st.button("🔄 解除冷却：强制连网冲刷", use_container_width=True):
-        # 强制清除冷却阻拦时间戳和页面缓存
         lottery_code_tmp = 'dlt' if "DLT" in st.session_state.get("canvas_channel", "双色球 (SSQ)") else 'ssq'
         if f"last_fetch_time_{lottery_code_tmp}" in st.session_state:
             del st.session_state[f"last_fetch_time_{lottery_code_tmp}"]
@@ -252,9 +252,7 @@ with st.sidebar:
 
     st.markdown("---")
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"], key="canvas_channel")
-    
     period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=3)
-    
     st.markdown("---")
     st.markdown("### 🗄️ 数据库管理 (Admin)")
     uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据", type=['csv', 'xls', 'xlsx'])
@@ -281,7 +279,7 @@ if not df_base.empty:
     if new_count > 0:
         st.success(f"⚡ 自动抓取成功：已自动补齐最新的 **{new_count}** 期数据！当前最新: 第 **{latest_issue}** 期。")
     else:
-        st.info(f"🟢 当前数据库最新状态：最新期号 第 **{latest_issue}** 期。(5分钟频繁拦截防护中，如需强刷请点左侧侧边栏按钮)")
+        st.info(f"🟢 当前数据库最新状态：最新期号 第 **{latest_issue}** 期。(5分钟频繁拦截防护中)")
         
     st.markdown("### 📡 开启高级过滤雷达")
     filter_mode = st.radio("选择分析维度", ["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"], horizontal=True)
@@ -339,108 +337,123 @@ if not df_base.empty:
 
     st.markdown("---")
     
-    calc_col, export_col = st.columns([1.5, 1])
-    with calc_col:
-        st.subheader("🧮 基础复式计算器")
-        cc1, cc2 = st.columns(2)
-        with cc1: sel_front = st.number_input(f"选取前区个数 (至少{req_f}个)", min_value=req_f, max_value=max_f, value=req_f)
-        with cc2: sel_back = st.number_input(f"选取后区个数 (至少{req_b}个)", min_value=req_b, max_value=max_b, value=req_b)
-        bets = calculate_bets(sel_front, req_f) * calculate_bets(sel_back, req_b)
-        st.info(f"💰 基础全包共计 **{bets}** 注，需投入 **{bets * 2}** 元。")
-
-    with export_col:
-        st.subheader("🖨️ 导出走势报告")
-        text_report = generate_text_report(f"{lottery_type} {filter_mode} ({actual_periods}期)", front_counts, back_counts, is_dlt)
-        st.download_button("📥 下载统计 txt", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
-
     # =======================================================
-    # 📐 搬迁改造：012路傻瓜化高级交互缩水控制台面板
+    # 📐 搬迁改造：100%还原图1样式的傻瓜化胆拖+滑块缩水控制台面板
     # =======================================================
-    st.markdown("---")
-    st.subheader("⚙️ 012路高阶智能化智能缩水控制台")
+    st.subheader("🔥 机构级高阶缩水终端 (1比1完美重塑版)")
+    st.caption("完全融合图1的胆拖大池挑选机制与012路实时拉杆滑块缩水引擎")
     
-    with st.expander("📝 查看底层公式与学术概念"):
-        st.markdown("基于《计算公式000.docx》：")
-        st.latex(r"C_n^k = \frac{n!}{k!(n-k)!} \quad \text{(组合大底底数)}")
-        st.markdown("**0路数字**：能被3整除；**1路数字**：除以3余1；**2路数字**：除以3余2。")
+    # 步骤一：设定号码大池 (胆拖模式) —— 完美复制图1左半边和右半边
+    with st.expander("👉 第一步：设定基础大底池条件 (胆拖模式)", expanded=True):
+        ui_col1, ui_col2 = st.columns(2)
+        with ui_col1:
+            # 动态调整前区最大选球限制（大乐透前区最多选4个胆，双色球最多5个胆）
+            max_dan_limit = req_f - 1
+            red_dan = st.multiselect(f"{'🔵' if is_dlt else '🔴'} 选定前区【胆码】 (必出号)", range(1, max_f + 1), max_selections=max_dan_limit)
+            red_tuo = st.multiselect(f"⭕ 选定前区【拖码】 (候选号池)", [i for i in range(1, max_f + 1) if i not in red_dan])
+        with ui_col2:
+            blue_balls = st.multiselect(f"{'🟡' if is_dlt else '🔵'} 选定【后区号码】", range(1, max_b + 1))
+            
+        st.info(f"当前大底选中状态 ➡️ 前区胆码: {len(red_dan)} 个，前区拖码: {len(red_tuo)} 个，后区选码: {len(blue_balls)} 个")
 
-    # 分割区间组
-    f_0 = [x for x in range(1, max_f + 1) if x % 3 == 0]
-    f_1 = [x for x in range(1, max_f + 1) if x % 3 == 1]
-    f_2 = [x for x in range(1, max_f + 1) if x % 3 == 2]
-    
-    b_0 = [x for x in range(1, max_b + 1) if x % 3 == 0]
-    b_1 = [x for x in range(1, max_b + 1) if x % 3 == 1]
-    b_2 = [x for x in range(1, max_b + 1) if x % 3 == 2]
-
-    # 构建傻瓜滑动交互操作大区
+    # 步骤二：012路拉杆交互控制台 —— 完美复制图1下半部分的滑块配比
+    st.markdown("#### 👉 第二步：调配 012路 核心比例拉杆")
     st.markdown('<div class="filter-box">', unsafe_allow_html=True)
     
-    # 动态适配初始默认滑块比例
     def_f0, def_f1, def_f2 = (2, 2, 1) if is_dlt else (2, 2, 2)
     def_b0, def_b1, def_b2 = (0, 1, 1) if is_dlt else (0, 1, 0)
     
-    # 用横向三列滑块展现012路，极致还原傻瓜式交互
-    st.markdown(f"#### {'🔵' if is_dlt else '🔴'} 前区 012路数量配比调节器 (总和必须等于 {req_f})")
+    st.markdown(f"**前区 012路 个数滑动条 (三项总和必须严格等于 {req_f})**")
     sc1, sc2, sc3 = st.columns(3)
-    with sc1: f_req_0 = st.slider("0路出号个数", 0, req_f, def_f0, key="slider_f0")
-    with sc2: f_req_1 = st.slider("1路出号个数", 0, req_f, def_f1, key="slider_f1")
-    with sc3: f_req_2 = st.slider("2路出号个数", 0, req_f, def_f2, key="slider_f2")
+    with sc1: f_req_0 = st.slider("前区 0路 (整除3) 个数", 0, req_f, def_f0, key="v1_f0")
+    with sc2: f_req_1 = st.slider("前区 1路 (余1) 个数", 0, req_f, def_f1, key="v1_f1")
+    with sc3: f_req_2 = st.slider("前区 2路 (余2) 个数", 0, req_f, def_f2, key="v1_f2")
     
-    # 实时彩色渲染前区选定比例
     st.markdown(f"""
     <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
-        <div class='ratio-badge' style='color:#6FB1FC; border-color:#6FB1FC;'>前区0路：{f_req_0} 个</div>
-        <div class='ratio-badge' style='color:#FF4B2B; border-color:#FF4B2B;'>前区1路：{f_req_1} 个</div>
-        <div class='ratio-badge' style='color:#00E676; border-color:#00E676;'>前区2路：{f_req_2} 个</div>
+        <div class='ratio-badge' style='color:#6FB1FC; border-color:#6FB1FC;'>前区 0路设定：{f_req_0} 个</div>
+        <div class='ratio-badge' style='color:#FF4B2B; border-color:#FF4B2B;'>前区 1路设定：{f_req_1} 个</div>
+        <div class='ratio-badge' style='color:#00E676; border-color:#00E676;'>前区 2路设定：{f_req_2} 个</div>
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown(f"#### {'🟡' if is_dlt else '🔵'} 后区 012路数量配比调节器 (总和必须等于 {req_b})")
+    st.markdown(f"**后区 012路 个数滑动条 (三项总和必须严格等于 {req_b})**")
     sbc1, sbc2, sbc3 = st.columns(3)
-    with sbc1: b_req_0 = st.slider("0路出号个数", 0, req_b, def_b0, key="slider_b0")
-    with sbc2: b_req_1 = st.slider("1路出号个数", 0, req_b, def_b1, key="slider_b1")
-    with sbc3: b_req_2 = st.slider("2路出号个数", 0, req_b, def_b2, key="slider_b2")
+    with sbc1: b_req_0 = st.slider("后区 0路 个数", 0, req_b, def_b0, key="v1_b0")
+    with sbc2: b_req_1 = st.slider("后区 1路 个数", 0, req_b, def_b1, key="v1_b1")
+    with sbc3: b_req_2 = st.slider("后区 2路 个数", 0, req_b, def_b2, key="v1_b2")
     
-    # 实时彩色渲染后区选定比例
     st.markdown(f"""
     <div style='display: flex; gap: 10px;'>
-        <div class='ratio-badge' style='color:#6FB1FC; border-color:#6FB1FC;'>后区0路：{b_req_0} 个</div>
-        <div class='ratio-badge' style='color:#FF4B2B; border-color:#FF4B2B;'>后区1路：{b_req_1} 个</div>
-        <div class='ratio-badge' style='color:#00E676; border-color:#00E676;'>后区2路：{b_req_2} 个</div>
+        <div class='ratio-badge' style='color:#6FB1FC; border-color:#6FB1FC;'>后区 0路设定：{b_req_0} 个</div>
+        <div class='ratio-badge' style='color:#FF4B2B; border-color:#FF4B2B;'>后区 1路设定：{b_req_1} 个</div>
+        <div class='ratio-badge' style='color:#00E676; border-color:#00E676;'>后区 2路设定：{b_req_2} 个</div>
     </div>
     """, unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # 步骤三：执行高阶缩水过滤
     sum_f = f_req_0 + f_req_1 + f_req_2
     sum_b = b_req_0 + b_req_1 + b_req_2
 
-    # 逻辑守卫检测，并进行大底乘法组合数演算
     if sum_f != req_f:
-        st.error(f"⚠️ **前区校验失败**：012路分配总数当前为 {sum_f} 个，不满足大底设定的 {req_f} 个！请重新滑动拉杆。")
+        st.error(f"⚠️ **拉杆配比错误**：前区012路设定总和为 {sum_f}，不等于开奖规定所需的 {req_f} 个！请重新滑动。")
     elif sum_b != req_b:
-        st.error(f"⚠️ **后区校验失败**：012路分配总数当前为 {sum_b} 个，不满足大底设定的 {req_b} 个！请重新滑动拉杆。")
+        st.error(f"⚠️ **拉杆配比错误**：后区012路设定总和为 {sum_b}，不等于开奖规定所需的 {req_b} 个！请重新滑动。")
     else:
-        comb_f0 = calculate_bets(len(f_0), f_req_0)
-        comb_f1 = calculate_bets(len(f_1), f_req_1)
-        comb_f2 = calculate_bets(len(f_2), f_req_2)
+        # 计算拖码需要选多少个
+        need_tuo_count = req_f - len(red_dan)
         
-        comb_b0 = calculate_bets(len(b_0), b_req_0)
-        comb_b1 = calculate_bets(len(b_1), b_req_1)
-        comb_b2 = calculate_bets(len(b_2), b_req_2)
-        
-        total_filtered_bets = comb_f0 * comb_f1 * comb_f2 * comb_b0 * comb_b1 * comb_b2
-        st.success(f"🔥 全保形态验证成功：当前配置形态理论极限组合总数为 **{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
-        
-        if total_filtered_bets > 0:
-            if st.button("🎲 启动终极雷达：智能筛选 5 注实战精华号码"):
-                st.markdown("#### 🎯 智能全包池内推荐号组：")
-                for i in range(min(5, total_filtered_bets)):
-                    pick_f = sorted(random.sample(f_0, f_req_0) + random.sample(f_1, f_req_1) + random.sample(f_2, f_req_2))
-                    pick_b = sorted(random.sample(b_0, b_req_0) + random.sample(b_1, b_req_1) + random.sample(b_2, b_req_2))
+        if need_tuo_count < 0 or len(red_tuo) < need_tuo_count:
+            st.warning(f"💡 基础数量不足：当前前区胆码有 {len(red_dan)} 个，还需从拖码池中自动抽取 {need_tuo_count} 个。但你选的拖码候选球不足，无法组合！")
+        elif len(blue_balls) < req_b:
+            st.warning(f"💡 后区数量不足：请在第一步中至少勾选 {req_b} 个后区号码！")
+        else:
+            # 开始进行排列组合计算大底数
+            all_front_combinations = list(itertools.combinations(red_tuo, need_tuo_count))
+            all_back_combinations = list(itertools.combinations(blue_balls, req_b))
+            
+            raw_total_bets = len(all_front_combinations) * len(all_back_combinations)
+            
+            if st.button("⚡ 启动高级马尔可夫演练与条件过滤 (智能缩水)", use_container_width=True):
+                valid_front_combs = []
+                # 过滤前区
+                for tuo_comb in all_front_combinations:
+                    full_front = sorted(list(red_dan) + list(tuo_comb))
+                    if check_012_ratio(full_front, f_req_0, f_req_1, f_req_2):
+                        valid_front_combs.append(full_front)
+                
+                # 过滤后区
+                valid_back_combs = []
+                for b_comb in all_back_combinations:
+                    if check_012_ratio(b_comb, b_req_0, b_req_1, b_req_2):
+                        valid_back_combs.append(b_comb)
+                
+                # 最终交叉组合数
+                final_filtered_bets = len(valid_front_combs) * len(valid_back_combs)
+                
+                st.success(f"🎉 缩水完成！原始大底共计 {raw_total_bets} 注，经过 012路 滑块精确洗礼后，仅剩 **{final_filtered_bets}** 注极品精华！")
+                
+                if final_filtered_bets > 0:
+                    st.markdown("### 🏆 核心推荐精选号组 (最多展示前20注)：")
                     
-                    f_str = " ".join([f"{str(x).zfill(2)}" for x in pick_f])
-                    b_str = " ".join([f"{str(x).zfill(2)}" for x in pick_b])
-                    st.code(f"第 {i+1} 注: [ {f_str} ] + [ {b_str} ]")
+                    # 组合出最终的结果集
+                    display_count = 0
+                    for f_comb in valid_front_combs:
+                        for b_comb in valid_back_combs:
+                            if display_count >= 20:
+                                break
+                            f_str = " ".join([f"{str(x).zfill(2)}" for x in f_comb])
+                            b_str = " ".join([f"{str(x).zfill(2)}" for x in b_comb])
+                            st.code(f"极品第 {display_count + 1} 注: [ {f_str} ] + [ {b_str} ]")
+                            display_count += 1
+                else:
+                    st.error("❌ 过滤提示：大池子里的号码组合与您拉动的 012路 配比冲突，没有号能熬过该缩水条件。请调整滑块配比或扩大选球池！")
+
+    st.markdown("---")
+    st.subheader("🖨️ 系统辅助工具")
+    text_report = generate_text_report(f"{lottery_type} ({actual_periods}期)", front_counts, back_counts, is_dlt)
+    st.download_button("📥 下载基础统计数据 txt 报告", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
+
 else:
     st.warning("⚠️ **脱机金库暂无数据！** 请通过侧边栏上传 xls/csv。")
