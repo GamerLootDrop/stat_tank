@@ -67,7 +67,7 @@ if not st.session_state.authenticated:
 
 
 # ==========================================
-# 2. 智能读取引擎 (5分钟频繁抓取冷却拦截防封锁)
+# 2. 智能读取引擎 (5分钟冷冻防高频刷拦截防封锁)
 # ==========================================
 def fetch_latest_data(lottery_code, local_latest_issue):
     """
@@ -80,7 +80,7 @@ def fetch_latest_data(lottery_code, local_latest_issue):
     last_fetch_key = f"last_fetch_time_{lottery_code}"
     if last_fetch_key in st.session_state:
         if now_time - st.session_state[last_fetch_key] < 300:
-            return pd.DataFrame() # 冷却期内直接拒绝连网，防止反复点击抓取导致IP被封
+            return pd.DataFrame() 
 
     urls = [
         f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=50&_t={int(now_time)}", 
@@ -179,7 +179,7 @@ def load_local_data(lottery_code, uploaded_file=None):
     return df_final, new_count
 
 # ==========================================
-# 3. 核心运算与深度扫描逻辑
+# 3. 核心运算与过滤匹配
 # ==========================================
 def calculate_frequencies(df, is_dlt=True):
     if is_dlt:
@@ -227,7 +227,7 @@ max_f, max_b = (35, 12) if is_dlt else (33, 16)
 # ==========================================
 # 5. 主画面区
 # ==========================================
-st.header(f"🚀 坦克纵向历史雷达：{lottery_type}")
+st.header(f"🚀 坦克纵向同期走势雷达：{lottery_type}")
 
 with st.spinner("📡 正在同步全网开奖数据..."):
     df_base, new_count = load_local_data(lottery_code, uploaded_file)
@@ -235,25 +235,27 @@ with st.spinner("📡 正在同步全网开奖数据..."):
 if not df_base.empty:
     latest_issue = str(df_base.iloc[0]['期号'])
     
-    # 🔒 5分钟频刷保护机制状态提示
     if new_count > 0:
         st.success(f"⚡ 自动抓取成功：已自动补齐最新的 **{new_count}** 期数据！当前最新: 第 **{latest_issue}** 期。")
     else:
-        st.info(f"🟢 数据库状态：最新期号为第 **{latest_issue}** 期。(5分钟频繁拦截防护中，如需强刷请点左侧按钮)")
+        st.info(f"🟢 数据库状态：最新期号为第 **{latest_issue}** 期。(5分钟频繁拦截防护中)")
         
     st.markdown("---")
-    st.subheader("📅 历史同期纵向精准切割")
+    st.subheader("📅 历史同期走势纵向正序切割 (2003~2026)")
     
-    # 🎯 核心升级：提取当前最新期号的后三位（例如 2026054 提取出 "054"）
+    # 🎯 精确截取最新开奖期号的后三位（例如最新期是 2026054，则截取 "054"）
     target_suffix = latest_issue[-3:]
     
-    # 🚀 精确过滤算法：过滤出从2003年起，所有年份中尾号完全等于当前期“054”的历史记录
+    # 🚀 过滤核心改动：筛选出全量数据库中，所有期号末尾为该三位数的行
     df_filtered = df_base[df_base['期号'].astype(str).str.endswith(target_suffix)].copy()
+    
+    # 📐 完美还原图1核心：必须将数据按照期号（年份）从小到大进行【正序】排列，以便观察走势
+    df_filtered = df_filtered.sort_values(by='期号', ascending=True).reset_index(drop=True)
     actual_periods = len(df_filtered)
     
-    st.error(f"🔥 **已激活纵向雷达**：已为您切出历史记录中所有年份的 **第 {target_suffix} 期** 数据！(自2003年以来共捕获 {actual_periods} 期同尾老底)")
+    st.error(f"🔥 **纵向正序走势已激活**：正在为您展现自2003年起历年 **第 {target_suffix} 期** 的纵向发展轨迹！(共匹配到 {actual_periods} 期历史同期数据)")
     
-    with st.expander(f"📊 点击查看历年第 {target_suffix} 期全量大底列表"):
+    with st.expander(f"📊 点击查看历年第 {target_suffix} 期全量大底列表 (已按年份由远及近正序排列)"):
         st.dataframe(df_filtered.astype(str), use_container_width=True)
 
     # 🧬 纵向历史同期的彩色频次矩阵
@@ -281,7 +283,7 @@ if not df_base.empty:
         st.markdown(render_balls(back_counts, back_color_class), unsafe_allow_html=True)
 
     # =======================================================
-    # 📐 搬迁改造：012路傻瓜化胆拖+滑块缩水控制台面板
+    # 📐 012路高阶缩水控制台面板
     # =======================================================
     st.markdown("---")
     st.subheader("🔥 机构级高阶缩水终端 (012路智能交互版)")
@@ -307,9 +309,9 @@ if not df_base.empty:
     
     st.markdown(f"**前区 012路 个数滑动条 (三项总和必须严格等于 {req_f})**")
     sc1, sc2, sc3 = st.columns(3)
-    with sc1: f_req_0 = st.slider("前区 0路 (整除3) 个数", 0, req_f, def_f0, key="v2_f0")
-    with sc2: f_req_1 = st.slider("前区 1路 (余1) 个数", 0, req_f, def_f1, key="v2_f1")
-    with sc3: f_req_2 = st.slider("前区 2路 (余2) 个数", 0, req_f, def_f2, key="v2_f2")
+    with sc1: f_req_0 = st.slider("前区 0路 (整除3) 个数", 0, req_f, def_f0, key="v3_f0")
+    with sc2: f_req_1 = st.slider("前区 1路 (余1) 个数", 0, req_f, def_f1, key="v3_f1")
+    with sc3: f_req_2 = st.slider("前区 2路 (余2) 个数", 0, req_f, def_f2, key="v3_f2")
     
     st.markdown(f"""
     <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
@@ -321,9 +323,9 @@ if not df_base.empty:
     
     st.markdown(f"**后区 012路 个数滑动条 (三项总和必须严格等于 {req_b})**")
     sbc1, sbc2, sbc3 = st.columns(3)
-    with sbc1: b_req_0 = st.slider("后区 0路 个数", 0, req_b, def_b0, key="v2_b0")
-    with sbc2: b_req_1 = st.slider("后区 1路 个数", 0, req_b, def_b1, key="v2_b1")
-    with sbc3: b_req_2 = st.slider("后区 2路 个数", 0, req_b, def_b2, key="v2_b2")
+    with sbc1: b_req_0 = st.slider("后区 0路 个数", 0, req_b, def_b0, key="v3_b0")
+    with sbc2: b_req_1 = st.slider("后区 1路 个数", 0, req_b, def_b1, key="v3_b1")
+    with sbc3: b_req_2 = st.slider("后区 2路 个数", 0, req_b, def_b2, key="v3_b2")
     
     st.markdown(f"""
     <div style='display: flex; gap: 10px;'>
@@ -354,7 +356,7 @@ if not df_base.empty:
             all_back_combinations = list(itertools.combinations(blue_balls, req_b))
             raw_total_bets = len(all_front_combinations) * len(all_back_combinations)
             
-            if st.button("⚡ 针对历史第054期交集形态：启动智能缩水", use_container_width=True):
+            if st.button(f"⚡ 针对历史第 {target_suffix} 期正序大底：启动智能缩水", use_container_width=True):
                 valid_front_combs = []
                 for tuo_comb in all_front_combinations:
                     full_front = sorted(list(red_dan) + list(tuo_comb))
