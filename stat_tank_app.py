@@ -11,38 +11,40 @@ import re
 import itertools
 
 # ==========================================
-# 1. 全局页面配置 (绝对保留你最喜欢的极简防黑框 UI)
+# 1. 全局页面配置 (已针对手机小屏幕与极简防黑框 UI 进行融合调优)
 # ==========================================
 st.set_page_config(page_title="坦克指挥控制台", page_icon="🚀", layout="wide")
 
 st.markdown("""
 <style>
-    .ball-container { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    /* 球体在手机上自适应紧凑排列 */
+    .ball-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
     .ball {
-        width: 38px; height: 38px; border-radius: 50%;
+        width: 34px; height: 34px; border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
-        font-weight: bold; font-size: 15px; color: white;
+        font-weight: bold; font-size: 14px; color: white;
         text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
     }
-    .ball-red { background: radial-gradient(circle at 10px 10px, #FF4B2B, #B31217); box-shadow: 0 0 8px rgba(255, 75, 43, 0.6); }
-    .ball-blue { background: radial-gradient(circle at 10px 10px, #6FB1FC, #0052D4); box-shadow: 0 0 8px rgba(0, 82, 212, 0.6); }
-    .ball-yellow { background: radial-gradient(circle at 10px 10px, #FFD700, #F39C12); color: #333; text-shadow: none; box-shadow: 0 0 8px rgba(243, 156, 18, 0.6); }
+    .ball-red { background: radial-gradient(circle at 10px 10px, #FF4B2B, #B31217); box-shadow: 0 0 6px rgba(255, 75, 43, 0.5); }
+    .ball-blue { background: radial-gradient(circle at 10px 10px, #6FB1FC, #0052D4); box-shadow: 0 0 6px rgba(0, 82, 212, 0.5); }
+    .ball-yellow { background: radial-gradient(circle at 10px 10px, #FFD700, #F39C12); color: #333; text-shadow: none; box-shadow: 0 0 6px rgba(243, 156, 18, 0.5); }
     
+    /* 频次横条在手机和电脑上都能自适应紧凑排列 */
     .freq-tag {
-        background-color: #2b2b2b; color: #00E676; padding: 5px 10px;
-        border-radius: 5px; font-weight: bold; margin-right: 15px;
+        background-color: #2b2b2b; color: #00E676; padding: 4px 8px;
+        border-radius: 5px; font-weight: bold; margin-right: 10px;
         border-left: 4px solid #00E676;
-        min-width: 80px; text-align: center;
+        min-width: 65px; text-align: center; font-size: 13px;
     }
-    .stat-row { display: flex; align-items: center; margin-bottom: 10px; background: #1E1E1E; padding: 10px; border-radius: 8px;}
-    .filter-box { background: #1E1E1E; padding: 20px; border-radius: 10px; border: 1px solid #333; margin-bottom: 15px;}
+    .stat-row { display: flex; align-items: center; margin-bottom: 8px; background: #1E1E1E; padding: 8px; border-radius: 8px;}
+    .filter-box { background: #1E1E1E; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 12px;}
     
     /* 彻底封死顶部区域：禁止点击、高度归零 */
     [data-testid="stHeader"], .stApp > header { display: none !important; pointer-events: none !important; height: 0px !important; }
     #MainMenu, footer, .stDeployButton, .stAppDeployButton, [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
     
-    /* 傻瓜式012路中控UI高亮 */
-    .ratio-badge { background-color: #262626; border: 1px solid #444; padding: 8px 15px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 16px;}
+    /* 手机/电脑自适应012路中控UI高亮 */
+    .ratio-badge { background-color: #262626; border: 1px solid #444; padding: 6px 12px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 14px; flex: 1;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,29 +70,25 @@ if not st.session_state.authenticated:
 
 
 # ==========================================
-# 2. 智能读取引擎 (防频刷冷却雷达)
+# 2. 智能读取引擎 (已彻底废除频繁刷新冷却限制，实现全自动随时跟进最新期号)
 # ==========================================
 def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
     """
-    高精度实时全网增量同步爬虫引擎 (带5分钟频繁抓取冷却拦截器)
+    高精度实时全网增量同步爬虫引擎 (已爆改：带随机时间戳击穿，保证手机端和电脑端每次进来都是最新数据)
     """
     if f"err_{lottery_code}" in st.session_state:
         del st.session_state[f"err_{lottery_code}"]
 
     now_time = time.time()
-    last_fetch_key = f"last_fetch_time_{lottery_code}"
     
-    # 只有使用默认50期限制时才激活冷却锁，深挖模式不锁，确保切换时有数据算统计
-    if custom_limit == 50 and last_fetch_key in st.session_state:
-        if now_time - st.session_state[last_fetch_key] < 300:
-            return pd.DataFrame()
+    # 彻底移除原有的 300秒 拦截器代码，防止手机端缓存卡死
 
     urls = [
         f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={custom_limit}&_t={int(now_time)}", 
         f"https://datachart.500.com/{lottery_code}/history/inc/history.php?limit={custom_limit}&_t={int(now_time)}"
     ]
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
         "Referer": f"https://datachart.500.com/{lottery_code}/history/history.shtml"
     }
     
@@ -117,7 +115,7 @@ def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
                 for td in tds[1:]:
                     text = td.get_text(strip=True)
                     if text.isdigit(): balls.append(int(text))
-                
+               
                 date_str = tds[-1].get_text(strip=True)
                 if not re.search(r'\d{4}-\d{2}-\d{2}', date_str):
                     date_str = time.strftime("%Y-%m-%d", time.localtime())
@@ -127,8 +125,6 @@ def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
                     new_rows.append([issue_val, date_str, core_balls[0], core_balls[1], core_balls[2], core_balls[3], core_balls[4], core_balls[5], core_balls[6]])
             
             if new_rows:
-                if custom_limit == 50:
-                    st.session_state[last_fetch_key] = now_time
                 break 
         except Exception: continue
 
@@ -139,7 +135,7 @@ def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=60)  
+@st.cache_data(ttl=5)  # 缓存时间大幅缩短至5秒，满足移动端和PC端极速刷新同步需求
 def load_local_data(lottery_code, uploaded_file=None, target_mode="默认"):
     df_local = pd.DataFrame()
     source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else (f"{lottery_code}.xls" if os.path.exists(f"{lottery_code}.xls") else None))
@@ -167,11 +163,10 @@ def load_local_data(lottery_code, uploaded_file=None, target_mode="默认"):
         
     local_latest = int(df_local.iloc[0]['期号']) if not df_local.empty else 0
     
-    # 核心改动点：当切换到历史同期且没有上传表格时，自动拉满爬虫抓取深度，确保大底足够长，统计能够往后计算
     if target_mode == "历史同期对比" and df_local.empty:
         df_new = fetch_latest_data(lottery_code, local_latest, custom_limit=3000)
     else:
-        df_new = fetch_latest_data(lottery_code, local_latest, custom_limit=50)
+        df_new = fetch_latest_data(lottery_code, local_latest, custom_limit=100)
     
     new_count = len(df_new)
     if not df_new.empty:
@@ -231,7 +226,7 @@ def generate_text_report(title, front_counts, back_counts, is_dlt):
     return report
 
 # ==========================================
-# 4. 侧边栏
+# 4. 侧边栏 (原封不动全部保留，确保PC端布局完整)
 # ==========================================
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
@@ -240,15 +235,12 @@ with st.sidebar:
     
     if st.button("🔄 解除冷却：强制连网冲刷", use_container_width=True):
         lottery_code_tmp = 'dlt' if "DLT" in st.session_state.get("canvas_channel", "双色球 (SSQ)") else 'ssq'
-        if f"last_fetch_time_{lottery_code_tmp}" in st.session_state:
-            del st.session_state[f"last_fetch_time_{lottery_code_tmp}"]
         load_local_data.clear() 
         st.rerun() 
 
     st.markdown("---")
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"], key="canvas_channel")
     
-    # 允许选择不同的过滤期数
     period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=3)
     
     st.markdown("---")
@@ -265,9 +257,9 @@ max_f, max_b = (35, 12) if is_dlt else (33, 16)
 # ==========================================
 st.header(f"🚀 雷达监测：{lottery_type}")
 
-# 先获取当前单选框的状态
+# 爆改：由于你在手机上最爱用的是历史同期，这里默认启动项直接帮切到“历史同期对比”
 if "filter_mode_state" not in st.session_state:
-    st.session_state.filter_mode_state = "默认 (近期连贯走势)"
+    st.session_state.filter_mode_state = "历史同期对比"
 
 with st.spinner("📡 正在连线云端检测最新开奖数据..."):
     df_base, new_count = load_local_data(lottery_code, uploaded_file, target_mode=st.session_state.filter_mode_state)
@@ -281,11 +273,10 @@ if not df_base.empty:
     if new_count > 0:
         st.success(f"⚡ 自动抓取成功：已自动补齐最新的 **{new_count}** 期数据！当前最新: 第 **{latest_issue}** 期。")
     else:
-        st.info(f"🟢 当前数据库最新状态：最新期号 第 **{latest_issue}** 期。(5分钟频繁拦截防护中，如需强刷请点左侧侧边栏按钮)")
+        st.info(f"🟢 当前数据库最新状态：最新期号 第 **{latest_issue}** 期。")
         
     st.markdown("### 📡 开启高级过滤雷达")
     
-    # 将选择框结果绑定到 session_state 触发重载
     filter_mode = st.radio("选择分析维度", ["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"], index=["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"].index(st.session_state.filter_mode_state))
     if filter_mode != st.session_state.filter_mode_state:
         st.session_state.filter_mode_state = filter_mode
@@ -305,7 +296,6 @@ if not df_base.empty:
     else:
         df_filtered = df_base
 
-    # 核心修正：让切片出的 df 和下面的计算紧密连贯
     df = df_filtered.head(period_limit)
     actual_periods = len(df)
     
@@ -322,7 +312,6 @@ if not df_base.empty:
     else:
         st.warning("⚠️ 暂无足够的数据周期进行形态扫描，请尝试增加数据库深度。")
 
-    # 彩色频次矩阵：这里的计算会完美根据当前筛选出来的同期历史数据自动统计！
     st.markdown("---")
     st.subheader("🧬 核心出现频次矩阵")
     front_counts, back_counts = calculate_frequencies(df, is_dlt)
@@ -363,7 +352,7 @@ if not df_base.empty:
         st.download_button("📥 下载统计 txt", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
 
     # =======================================================
-    # 📐 012路智能化智能缩水控制台面板 (全量号码配比过滤器)
+    # 📐 012路智能化智能缩水控制台面板 (升级为手机端极度友好的加减号键微调布局)
     # =======================================================
     st.markdown("---")
     st.subheader("⚙️ 012路高阶智能化智能缩水控制台")
@@ -371,9 +360,8 @@ if not df_base.empty:
     with st.expander("📝 查看底层公式与学术概念"):
         st.markdown("基于《计算公式000.docx》：")
         st.latex(r"C_n^k = \frac{n!}{k!(n-k)!} \quad \text{(组合大底底数)}")
-        st.markdown("**0路数字**：能被3整除；**1路数字**：除以3余1；**2路数字**：除以3余2。")
+        st.markdown("**0路数字**：能能被3整除；**1路数字**：除以3余1；**2路数字**：除以3余2。")
 
-    # 分割区间组
     f_0 = [x for x in range(1, max_f + 1) if x % 3 == 0]
     f_1 = [x for x in range(1, max_f + 1) if x % 3 == 1]
     f_2 = [x for x in range(1, max_f + 1) if x % 3 == 2]
@@ -382,18 +370,18 @@ if not df_base.empty:
     b_1 = [x for x in range(1, max_b + 1) if x % 3 == 1]
     b_2 = [x for x in range(1, max_b + 1) if x % 3 == 2]
 
-    # 构建傻瓜滑动交互操作大区
     st.markdown('<div class="filter-box">', unsafe_allow_html=True)
     
-    # 动态适配初始默认滑块比例
-    def_f0, def_f1, def_f2 = (2, 2, 1) if is_dlt else (2, 2, 2)
-    def_b0, def_b1, def_b2 = (0, 1, 1) if is_dlt else (0, 1, 0)
+    # 根据你研究出来的 30期同期最强配比，直接预设黄金比例：前区 1:3:1，后区 1:1:0
+    def_f0, def_f1, def_f2 = (1, 3, 1) if is_dlt else (2, 2, 2)
+    def_b0, def_b1, def_b2 = (1, 1, 0) if is_dlt else (0, 1, 0)
     
+    # 爆改点：放弃 st.slider，采用带加减微调按钮的 st.number_input，彻底解决小屏幕手机上误触滑错的硬伤！
     st.markdown(f"#### {'🔵' if is_dlt else '🔴'} 前区 012路数量配比调节器 (总和必须等于 {req_f})")
     sc1, sc2, sc3 = st.columns(3)
-    with sc1: f_req_0 = st.slider("0路出号个数", 0, req_f, def_f0, key="slider_f0")
-    with sc2: f_req_1 = st.slider("1路出号个数", 0, req_f, def_f1, key="slider_f1")
-    with sc3: f_req_2 = st.slider("2路出号个数", 0, req_f, def_f2, key="slider_f2")
+    with sc1: f_req_0 = st.number_input("0路出号个数", min_value=0, max_value=req_f, value=def_f0, step=1, key="num_f0")
+    with sc2: f_req_1 = st.number_input("1路出号个数", min_value=0, max_value=req_f, value=def_f1, step=1, key="num_f1")
+    with sc3: f_req_2 = st.number_input("2路出号个数", min_value=0, max_value=req_f, value=def_f2, step=1, key="num_f2")
     
     # 实时彩色渲染前区选定比例
     st.markdown(f"""
@@ -406,9 +394,9 @@ if not df_base.empty:
     
     st.markdown(f"#### {'🟡' if is_dlt else '🔵'} 后区 012路数量配比调节器 (总和必须等于 {req_b})")
     sbc1, sbc2, sbc3 = st.columns(3)
-    with sbc1: b_req_0 = st.slider("0路出号个数", 0, req_b, def_b0, key="slider_b0")
-    with sbc2: b_req_1 = st.slider("1路出号个数", 0, req_b, def_b1, key="slider_b1")
-    with sbc3: b_req_2 = st.slider("2路出号个数", 0, req_b, def_b2, key="slider_b2")
+    with sbc1: b_req_0 = st.number_input("0路出号个数", min_value=0, max_value=req_b, value=def_b0, step=1, key="num_b0")
+    with sbc2: b_req_1 = st.number_input("1路出号个数", min_value=0, max_value=req_b, value=def_b1, step=1, key="num_b1")
+    with sbc3: b_req_2 = st.number_input("2路出号个数", min_value=0, max_value=req_b, value=def_b2, step=1, key="num_b2")
     
     # 实时彩色渲染后区选定比例
     st.markdown(f"""
@@ -423,11 +411,19 @@ if not df_base.empty:
     sum_f = f_req_0 + f_req_1 + f_req_2
     sum_b = b_req_0 + b_req_1 + b_req_2
 
-    # 逻辑守卫检测，并进行大底乘法组合数演算
+    # 爆改点：逻辑守卫检测，升级为智能提示差额，明确指导手机端用户增减
     if sum_f != req_f:
-        st.error(f"⚠️ **前区校验失败**：012路分配总数当前为 {sum_f} 个，不满足大底设定的 {req_f} 个！请重新滑动拉杆。")
+        diff_f = req_f - sum_f
+        if diff_f > 0:
+            st.error(f"⚠️ **前区校验失败**：当前已设定 {sum_f} 个，**还差 {diff_f} 个号**！请点击 [＋] 按钮增加。")
+        else:
+            st.error(f"⚠️ **前区校验失败**：当前已设定 {sum_f} 个，**多选了 {abs(diff_f)} 个号**！请点击 [－] 按钮减少。")
     elif sum_b != req_b:
-        st.error(f"⚠️ **后区校验失败**：012路分配总数当前为 {sum_b} 个，不满足大底设定的 {req_b} 个！请重新滑动拉杆。")
+        diff_b = req_b - sum_b
+        if diff_b > 0:
+            st.error(f"⚠️ **后区校验失败**：当前已设定 {sum_b} 个，**还差 {diff_b} 个号**！请点击 [＋] 按钮增加。")
+        else:
+            st.error(f"⚠️ **后区校验失败**：当前已设定 {sum_b} 个，**多选了 {abs(diff_b)} 个号**！请点击 [－] 按钮减少。")
     else:
         comb_f0 = calculate_bets(len(f_0), f_req_0)
         comb_f1 = calculate_bets(len(f_1), f_req_1)
@@ -441,7 +437,7 @@ if not df_base.empty:
         st.success(f"🔥 全保形态验证成功：当前配置形态理论极限组合总数为 **{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
         
         if total_filtered_bets > 0:
-            if st.button("🎲 启动终极雷达：智能筛选 5 注实战精华号码"):
+            if st.button("🎲 启动终极雷达：智能筛选 5 注实战精华号码", use_container_width=True):
                 st.markdown("#### 🎯 智能全包池内推荐号组：")
                 for i in range(min(5, total_filtered_bets)):
                     pick_f = sorted(random.sample(f_0, f_req_0) + random.sample(f_1, f_req_1) + random.sample(f_2, f_req_2))
