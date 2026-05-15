@@ -49,7 +49,7 @@ st.markdown("""
 # ==========================================
 # 2. 智能读取引擎 (5分钟冷冻防高频刷拦截防封锁)
 # ==========================================
-def fetch_latest_data(lottery_code, local_latest_issue):
+def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
     """
     增量同步爬虫引擎 (带5分钟冷冻防高频刷盾)
     """
@@ -58,13 +58,15 @@ def fetch_latest_data(lottery_code, local_latest_issue):
 
     now_time = time.time()
     last_fetch_key = f"last_fetch_time_{lottery_code}"
-    if last_fetch_key in st.session_state:
+    
+    # 仅当使用默认限制时，才激活5分钟冷却。如果属于临时深挖(custom_limit > 50)，则绕过冷冻以确保数据加载成功
+    if custom_limit == 50 and last_fetch_key in st.session_state:
         if now_time - st.session_state[last_fetch_key] < 300:
-            return pd.DataFrame() # 5分钟内频繁点击，直接退回脱机态，保全IP不被封锁
+            return pd.DataFrame() 
 
     urls = [
-        f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=50&_t={int(now_time)}", 
-        f"https://datachart.500.com/{lottery_code}/history/inc/history.php?limit=50&_t={int(now_time)}"
+        f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={custom_limit}&_t={int(now_time)}", 
+        f"https://datachart.500.com/{lottery_code}/history/inc/history.php?limit={custom_limit}&_t={int(now_time)}"
     ]
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -88,7 +90,7 @@ def fetch_latest_data(lottery_code, local_latest_issue):
                 if len(iss_str) < 3: continue
                 issue_val = int("20" + iss_str[:10]) if len(iss_str) == 5 else int(iss_str[:10])
                 
-                if issue_val <= local_latest_issue: continue
+                if custom_limit == 50 and issue_val <= local_latest_issue: continue
                 
                 balls = []
                 for td in tds[1:]:
@@ -104,7 +106,8 @@ def fetch_latest_data(lottery_code, local_latest_issue):
                     new_rows.append([issue_val, date_str, core_balls[0], core_balls[1], core_balls[2], core_balls[3], core_balls[4], core_balls[5], core_balls[6]])
             
             if new_rows:
-                st.session_state[last_fetch_key] = now_time
+                if custom_limit == 50:
+                    st.session_state[last_fetch_key] = now_time
                 break 
         except Exception: continue
 
@@ -142,7 +145,7 @@ def load_local_data(lottery_code, uploaded_file=None):
         except Exception: pass
         
     local_latest = int(df_local.iloc[0]['期号']) if not df_local.empty else 0
-    df_new = fetch_latest_data(lottery_code, local_latest)
+    df_new = fetch_latest_data(lottery_code, local_latest, custom_limit=50)
     
     new_count = len(df_new)
     if not df_new.empty:
@@ -220,7 +223,7 @@ if not df_base.empty:
         st.info(f"🟢 数据库状态：最新期号为第 **{latest_issue}** 期。(5分钟频繁拦截防护中)")
 
     # ------------------------------------------------------------
-    # ✨ 核心新增核心功能：历年同期正序走势分析面板（100%保留全量，仅新增提取）
+    # ✨ 核心新增功能：历年同期正序走势分析面板（彻底击穿50期数量封锁）
     # ------------------------------------------------------------
     st.markdown("---")
     st.subheader("📅 历史同期走势纵向正序切割 (2003~2026)")
@@ -228,19 +231,31 @@ if not df_base.empty:
     # 自动获取最新一期期号的后三位（例如最新期是2026054，截取出来就是 "054"）
     target_suffix = latest_issue[-3:]
     
-    # 提取自2003年起，所有年份中尾号为 054 的历史数据
-    df_filtered_sync = df_base[df_base['期号'].astype(str).str.endswith(target_suffix)].copy()
-    # 核心校准：按期号由小到大正序排列（2003 -> 2004 -> ...），100%对齐图1同尾走势表
+    # 如果当前基础池过短（比如纯靠网页抓的50期，没传本地大表格），为了防止同尾年份挖不出来，系统自动在后台深挖10000期组建超级大池
+    if len(df_base) < 1500:
+        with st.spinner(f"🔍 检测到基础数据库深度不足，系统正在后台秘密深度连网提取 2003 至今的全量历史同期节点..."):
+            df_deep_pool = fetch_latest_data(lottery_code, 0, custom_limit=10000)
+            if not df_deep_pool.empty:
+                df_sync_source = df_deep_pool
+            else:
+                df_sync_source = df_base
+    else:
+        df_sync_source = df_base
+
+    # 在安全的大底池中筛选所有年份以 054 结尾的历史记录
+    df_filtered_sync = df_sync_source[df_sync_source['期号'].astype(str).str.endswith(target_suffix)].copy()
+    
+    # 核心校准：按期号由小到大正序排列（2003 -> 2004 -> ...），100%完美还原图1同期对照表走势！
     df_filtered_sync = df_filtered_sync.sort_values(by='期号', ascending=True).reset_index(drop=True)
     actual_periods = len(df_filtered_sync)
     
-    st.error(f"🔥 **纵向同期正序雷达已激活**：正在为您分析自2003年起历年 **第 {target_suffix} 期** 的历史老底！(共匹配到 {actual_periods} 期数据)")
+    st.error(f"🔥 **纵向同期正序雷达已激活**：正在为您完美还原自2003年起历年 **第 {target_suffix} 期** 的历史纵向轨迹！(共追踪到 {actual_periods} 期同尾老底)")
     
-    with st.expander(f"📊 点击查看历年第 {target_suffix} 期纵向正序大表 (已按年份从小到大对齐走势)", expanded=True):
+    with st.expander(f"📊 点击查看历年第 {target_suffix} 期纵向正序大表 (已按年份由远及近正序排列)", expanded=True):
         st.dataframe(df_filtered_sync.astype(str), use_container_width=True)
 
     # ------------------------------------------------------------
-    # 以下为之前原代码里【所有老功能】原封不动无损恢复
+    # 以下为之前原代码里【所有老功能】100%原封不动恢复
     # ------------------------------------------------------------
     st.markdown("---")
     st.subheader("📊 全量冷热号码频次矩阵 (当前全量大底统计)")
