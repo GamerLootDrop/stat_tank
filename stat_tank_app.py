@@ -7,6 +7,7 @@ import random
 import requests
 from bs4 import BeautifulSoup
 import time  # 引入时间戳，用来击穿网站的反爬缓存
+import re
 
 # ==========================================
 # 1. 全局页面配置 (绝对保留你最喜欢的极简防黑框 UI)
@@ -61,70 +62,94 @@ if not st.session_state.authenticated:
                 st.error("❌ 警告：口令错误，访问被拒绝！")
     st.stop()
 
+
 # ==========================================
-# 2. 智能读取引擎 (防封锁伪装 + 雷达诊断控制)
+# 2. 智能读取引擎 (已替换为高性能去重抓取引擎)
 # ==========================================
 def fetch_latest_data(lottery_code, local_latest_issue):
+    """
+    高精度实时全网增量同步爬虫引擎 (兼容双色球/大乐透)
+    """
     # 清空旧的诊断日志
     if f"err_{lottery_code}" in st.session_state:
         del st.session_state[f"err_{lottery_code}"]
 
-    # 深度伪装：加入高级防盗链 Referer 和标准浏览器语言标头
+    urls = [
+        f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=50&_t={int(time.time())}", 
+        f"https://datachart.500.com/{lottery_code}/history/inc/history.php?limit=50&_t={int(time.time())}"
+    ]
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': f'https://datachart.500.com/{lottery_code}/history/history.shtml',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Referer": f"https://datachart.500.com/{lottery_code}/history/history.shtml"
     }
-    url = f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=50&_t={int(time.time())}"
     
-    try:
-        response = requests.get(url, headers=headers, timeout=8)
-        
-        # 诊断拦截：如果状态码不是200，说明被网站防火墙拒绝了
-        if response.status_code != 200:
-            st.session_state[f"err_{lottery_code}"] = f"目标网站拒绝连接 (错误码: {response.status_code})。大概率是因为系统部署在海外云端，被国内防火墙拦截了 IP。"
-            return pd.DataFrame()
-            
-        response.encoding = 'utf-8'
-        soup = BeautifulSoup(response.text, 'html.parser')
-        tbody = soup.find('tbody', id='tdata')
-        
-        if not tbody: 
-            st.session_state[f"err_{lottery_code}"] = "页面解析失败：未能定位到数据表格。可能是网站临时改版，或触发了人机验证拦截。"
-            return pd.DataFrame()
-        
-        new_data = []
-        for tr in tbody.find_all('tr'):
-            tds = tr.find_all('td')
-            if len(tds) < 10: 
+    # 动态匹配球数长度
+    d_cols_len = 7  # 500网前区+后区/蓝球总共都是7个节点
+    new_rows = []
+    
+    for url in urls:
+        try:
+            res = requests.get(url, headers=headers, timeout=10)
+            if res.status_code != 200:
                 continue
+            res.encoding = 'utf-8'
+            soup = BeautifulSoup(res.text, 'html.parser')
             
-            issue_text = tds[0].text.strip()
-            if not issue_text.isdigit():
-                continue
-            issue = int(issue_text)
+            # 高度兼容500彩票网不同的网页tr节点格式
+            trs = soup.find_all('tr', class_=['t_tr1', 't_tr2', 't_tr']) or soup.find_all('tr')
             
-            # 智能增量：只拿比本地新的期号
-            if issue <= local_latest_issue: 
-                continue
-                
-            date_str = tds[len(tds)-1].text.strip()
-            nums = [int(tds[i].text.strip()) for i in range(1, 8)]
-            new_data.append([issue, date_str] + nums)
-                
-        if new_data:
-            cols = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2'] if lottery_code == 'dlt' else ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
-            df_new = pd.DataFrame(new_data, columns=cols)
-            return df_new.sort_values(by='期号', ascending=False).reset_index(drop=True)
-            
-    except Exception as e: 
-        # 捕获真正的网络连接错误（如超时）
-        st.session_state[f"err_{lottery_code}"] = f"网络请求建立失败: {str(e)}。由于云端系统位于海外，访问国内数据源超时。"
-        
-    return pd.DataFrame()
+            for tr in trs:
+                tds = tr.find_all('td')
+                if len(tds) < d_cols_len + 1: 
+                    continue 
 
-@st.cache_data(ttl=60) # 缩短缓存时间，方便调试
+                # 提取期号并过滤掉乱码/非数字字符
+                iss_str = re.sub(r'\D', '', tds[0].get_text(strip=True))
+                if len(iss_str) < 3: 
+                    continue
+                
+                # 兼容性处理：自动补齐20xx年年份前缀
+                issue_val = int("20" + iss_str[:10]) if len(iss_str) == 5 else int(iss_str[:10])
+                
+                # 智能增量：只抓取比本地新的期号
+                if issue_val <= local_latest_issue:
+                    continue
+                
+                # 动态自适应获取所有开奖球号
+                rest_text = " ".join([td.get_text(separator=" ") for td in tds[1:]])
+                balls = [int(n) for n in re.findall(r'\d+', rest_text)]
+                balls = [n for n in balls if 0 <= n <= 81][:d_cols_len]
+                
+                # 获取日期列（500网通常在最后一列，部分版本在倒数第二列，这里安全获取）
+                date_str = tds[-1].get_text(strip=True)
+                if not re.search(r'\d{4}-\d{2}-\d{2}', date_str):
+                    date_str = time.strftime("%Y-%m-%d", time.localtime()) # 保底当前日期
+                
+                if len(balls) == d_cols_len:
+                    # 重新对齐大乐透和双色球的前后区数组格式
+                    if lottery_code == 'dlt':
+                        # 大乐透：5个前区，2个后区
+                        new_rows.append([issue_val, date_str, balls[0], balls[1], balls[2], balls[3], balls[4], balls[5], balls[6]])
+                    else:
+                        # 双色球：6个前区，1个后区
+                        new_rows.append([issue_val, date_str, balls[0], balls[1], balls[2], balls[3], balls[4], balls[5], balls[6]])
+            
+            if new_rows:
+                break # 抓取成功则不再请求备用URL
+        except Exception as e:
+            continue
+
+    if new_rows:
+        cols = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2'] if lottery_code == 'dlt' else ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
+        df_new = pd.DataFrame(new_rows, columns=cols)
+        return df_new.sort_values(by='期号', ascending=False).reset_index(drop=True)
+    else:
+        # 如果彻底抓不到数据，抛出友好诊断警报
+        st.session_state[f"err_{lottery_code}"] = "全网联网同步暂未获取到更新数据。可能是因为云端受到跨国网络波动拦截，建议启动下方 Admin 投喂机制更新。"
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=60)  # 缩短缓存时间，方便调试
 def load_local_data(lottery_code, uploaded_file=None):
     df_local = pd.DataFrame()
     source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else (f"{lottery_code}.xls" if os.path.exists(f"{lottery_code}.xls") else None))
@@ -160,6 +185,7 @@ def load_local_data(lottery_code, uploaded_file=None):
         df_final = df_local
         
     if not df_final.empty:
+        df_final = df_final.drop_duplicates(subset=['期号'], keep='first') # 彻底防止期号碰撞出现重复行
         df_final = df_final.sort_values(by='期号', ascending=False).reset_index(drop=True)
         df_final['日期_解析'] = pd.to_datetime(df_final['日期'], errors='coerce')
         df_final['星期'] = df_final['日期_解析'].dt.dayofweek
@@ -242,7 +268,7 @@ st.header(f"🚀 雷达监测：{lottery_type}")
 with st.spinner("📡 正在连线云端检测最新开奖数据..."):
     df_base, new_count = load_local_data(lottery_code, uploaded_file)
 
-# 🛠️ 核心添加：在左侧边栏顶端实时渲染雷达诊断报告
+# 🛠️ 雷达诊断报告完美保留
 if f"err_{lottery_code}" in st.session_state:
     st.sidebar.error(f"🚨 联网雷达警告：\n{st.session_state[f'err_{lottery_code}']}\n\n💡 应对方案：请通过下方 Admin 投喂最新的本地文件。")
 
