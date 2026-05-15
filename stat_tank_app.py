@@ -41,32 +41,53 @@ st.markdown("""
     [data-testid="stHeader"], .stApp > header { display: none !important; pointer-events: none !important; height: 0px !important; }
     #MainMenu, footer, .stDeployButton, .stAppDeployButton, [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
     
+    /* 傻瓜式012路中控UI高亮 */
     .ratio-badge { background-color: #262626; border: 1px solid #444; padding: 8px 15px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 16px;}
 </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# 🛡️ 1.5 安全认证 (内部口令密码墙)
+# ==========================================
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.markdown("<h1 style='text-align: center; color: #FF4B2B; margin-top: 100px;'>🚀 坦克战略指挥部</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #888;'>此系统为内部绝密版本，未授权人员请立即退出。</p>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        pwd = st.text_input("🔒 请输入安全访问口令：", type="password")
+        if st.button("验证身份进入系统", use_container_width=True):
+            if pwd == "888888":  # 这里修改密码
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("❌ 警告：口令错误，访问被拒绝！")
+    st.stop()
+
 
 # ==========================================
-# 2. 智能读取引擎 (5分钟冷冻防高频刷拦截防封锁)
+# 2. 智能读取引擎 (防频刷冷却雷达)
 # ==========================================
-def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
+def fetch_latest_data(lottery_code, local_latest_issue):
     """
-    增量同步爬虫引擎 (带5分钟冷冻防高频刷盾)
+    高精度实时全网增量同步爬虫引擎 (带5分钟频繁抓取冷却拦截器)
     """
     if f"err_{lottery_code}" in st.session_state:
         del st.session_state[f"err_{lottery_code}"]
 
+    # 🔒 拦截频繁抓取：检查上一次请求成功的时间戳。如果在300秒(5分钟)内且本地有最新数据，则不请求网络
     now_time = time.time()
     last_fetch_key = f"last_fetch_time_{lottery_code}"
-    
-    # 仅当使用默认限制时，才激活5分钟冷却。如果属于临时深挖(custom_limit > 50)，则绕过冷冻以确保数据加载成功
-    if custom_limit == 50 and last_fetch_key in st.session_state:
+    if last_fetch_key in st.session_state:
         if now_time - st.session_state[last_fetch_key] < 300:
-            return pd.DataFrame() 
+            # 5分钟内不重复连接网络，直接判定为最新，不抓取
+            return pd.DataFrame()
 
     urls = [
-        f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={custom_limit}&_t={int(now_time)}", 
-        f"https://datachart.500.com/{lottery_code}/history/inc/history.php?limit={custom_limit}&_t={int(now_time)}"
+        f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit=50&_t={int(now_time)}", 
+        f"https://datachart.500.com/{lottery_code}/history/inc/history.php?limit=50&_t={int(now_time)}"
     ]
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -74,28 +95,36 @@ def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
     }
     
     new_rows = []
+    
     for url in urls:
         try:
             res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code != 200: continue
+            if res.status_code != 200:
+                continue
             res.encoding = 'utf-8'
             soup = BeautifulSoup(res.text, 'html.parser')
+            
             trs = soup.find_all('tr', class_=['t_tr1', 't_tr2', 't_tr']) or soup.find_all('tr')
             
             for tr in trs:
                 tds = tr.find_all('td')
-                if len(tds) < 8: continue 
+                if len(tds) < 8: 
+                    continue 
 
                 iss_str = re.sub(r'\D', '', tds[0].get_text(strip=True))
-                if len(iss_str) < 3: continue
+                if len(iss_str) < 3: 
+                    continue
                 issue_val = int("20" + iss_str[:10]) if len(iss_str) == 5 else int(iss_str[:10])
                 
-                if custom_limit == 50 and issue_val <= local_latest_issue: continue
+                # 智能增量判定
+                if issue_val <= local_latest_issue:
+                    continue
                 
                 balls = []
                 for td in tds[1:]:
                     text = td.get_text(strip=True)
-                    if text.isdigit(): balls.append(int(text))
+                    if text.isdigit():
+                        balls.append(int(text))
                 
                 date_str = tds[-1].get_text(strip=True)
                 if not re.search(r'\d{4}-\d{2}-\d{2}', date_str):
@@ -106,16 +135,18 @@ def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
                     new_rows.append([issue_val, date_str, core_balls[0], core_balls[1], core_balls[2], core_balls[3], core_balls[4], core_balls[5], core_balls[6]])
             
             if new_rows:
-                if custom_limit == 50:
-                    st.session_state[last_fetch_key] = now_time
+                # 抓取成功，记录当前时间戳，开启5分钟冷却钟
+                st.session_state[last_fetch_key] = now_time
                 break 
-        except Exception: continue
+        except Exception:
+            continue
 
     if new_rows:
         cols = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2'] if lottery_code == 'dlt' else ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
         df_new = pd.DataFrame(new_rows, columns=cols)
         return df_new.sort_values(by='期号', ascending=False).reset_index(drop=True)
-    return pd.DataFrame()
+    else:
+        return pd.DataFrame()
 
 
 @st.cache_data(ttl=60)  
@@ -145,7 +176,7 @@ def load_local_data(lottery_code, uploaded_file=None):
         except Exception: pass
         
     local_latest = int(df_local.iloc[0]['期号']) if not df_local.empty else 0
-    df_new = fetch_latest_data(lottery_code, local_latest, custom_limit=50)
+    df_new = fetch_latest_data(lottery_code, local_latest)
     
     new_count = len(df_new)
     if not df_new.empty:
@@ -162,7 +193,7 @@ def load_local_data(lottery_code, uploaded_file=None):
     return df_final, new_count
 
 # ==========================================
-# 3. 核心运算与过滤匹配
+# 3. 核心运算与深度扫描逻辑
 # ==========================================
 def calculate_frequencies(df, is_dlt=True):
     if is_dlt:
@@ -176,18 +207,43 @@ def calculate_frequencies(df, is_dlt=True):
     for i in range(1, back_max + 1): back_counts.setdefault(i, 0)
     return front_counts, back_counts
 
-def calculate_bets(pool_size, required_count):
-    if pool_size < required_count or required_count < 0: return 0
-    return math.comb(pool_size, required_count)
+def calculate_bets(n, r): return math.comb(n, r) if r <= n and r >= 0 else 0
+
+def scan_advanced_patterns(df_slice, df_full, is_dlt):
+    front_cols = ['前1', '前2', '前3', '前4', '前5'] if is_dlt else ['前1', '前2', '前3', '前4', '前5', '前6']
+    repeat_count = 0; consecutive_count = 0
+    for idx, row in df_slice.iterrows():
+        nums = sorted([row[c] for c in front_cols])
+        if any(nums[i+1] - nums[i] == 1 for i in range(len(nums)-1)): consecutive_count += 1
+        full_idx = df_full.index[df_full['期号'] == row['期号']].tolist()
+        if full_idx and full_idx[0] + 1 < len(df_full):
+            prev_nums = set([df_full.iloc[full_idx[0] + 1][c] for c in front_cols])
+            if len(set(nums).intersection(prev_nums)) > 0: repeat_count += 1
+    return repeat_count, consecutive_count
+
+def generate_text_report(title, front_counts, back_counts, is_dlt):
+    report = f"========== {title} ==========\n\n[前区统计]\n"
+    def format_dict(counts_dict):
+        freq_group = {}
+        for num, freq in counts_dict.items(): freq_group.setdefault(freq, []).append(num)
+        res = ""
+        for freq in sorted(freq_group.keys(), reverse=True):
+            nums = ",".join([str(n).zfill(2) for n in sorted(freq_group[freq])])
+            res += f"{freq}次: {nums}\n"
+        return res
+    report += format_dict(front_counts) + "\n[后区统计]\n" + format_dict(back_counts) + "\n========================================="
+    return report
 
 # ==========================================
-# 4. 侧边栏配置
+# 4. 侧边栏
 # ==========================================
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
     st.title("控制台设置")
+    st.markdown("🔗 **[🔙 返回主站系统](/)**") 
     
     if st.button("🔄 解除冷却：强制连网冲刷", use_container_width=True):
+        # 强制清除冷却阻拦时间戳和页面缓存
         lottery_code_tmp = 'dlt' if "DLT" in st.session_state.get("canvas_channel", "双色球 (SSQ)") else 'ssq'
         if f"last_fetch_time_{lottery_code_tmp}" in st.session_state:
             del st.session_state[f"last_fetch_time_{lottery_code_tmp}"]
@@ -196,6 +252,9 @@ with st.sidebar:
 
     st.markdown("---")
     lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"], key="canvas_channel")
+    
+    period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=3)
+    
     st.markdown("---")
     st.markdown("### 🗄️ 数据库管理 (Admin)")
     uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据", type=['csv', 'xls', 'xlsx'])
@@ -208,58 +267,56 @@ max_f, max_b = (35, 12) if is_dlt else (33, 16)
 # ==========================================
 # 5. 主画面区
 # ==========================================
-st.header(f"🚀 坦克指挥控制台：{lottery_type}")
+st.header(f"🚀 雷达监测：{lottery_type}")
 
-with st.spinner("📡 正在同步全网开奖数据..."):
+with st.spinner("📡 正在连线云端检测最新开奖数据..."):
     df_base, new_count = load_local_data(lottery_code, uploaded_file)
+
+if f"err_{lottery_code}" in st.session_state:
+    st.sidebar.error(f"🚨 联网雷达警告：\n{st.session_state[f'err_{lottery_code}']}\n\n💡 应对方案：请通过下方 Admin 投喂最新的本地文件。")
 
 if not df_base.empty:
     latest_issue = str(df_base.iloc[0]['期号'])
     
-    # 状态栏提示
     if new_count > 0:
         st.success(f"⚡ 自动抓取成功：已自动补齐最新的 **{new_count}** 期数据！当前最新: 第 **{latest_issue}** 期。")
     else:
-        st.info(f"🟢 数据库状态：最新期号为第 **{latest_issue}** 期。(5分钟频繁拦截防护中)")
-
-    # ------------------------------------------------------------
-    # ✨ 核心新增功能：历年同期正序走势分析面板（彻底击穿50期数量封锁）
-    # ------------------------------------------------------------
-    st.markdown("---")
-    st.subheader("📅 历史同期走势纵向正序切割 (2003~2026)")
+        st.info(f"🟢 当前数据库最新状态：最新期号 第 **{latest_issue}** 期。(5分钟频繁拦截防护中，如需强刷请点左侧侧边栏按钮)")
+        
+    st.markdown("### 📡 开启高级过滤雷达")
+    filter_mode = st.radio("选择分析维度", ["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"], horizontal=True)
     
-    # 自动获取最新一期期号的后三位（例如最新期是2026054，截取出来就是 "054"）
-    target_suffix = latest_issue[-3:]
-    
-    # 如果当前基础池过短（比如纯靠网页抓的50期，没传本地大表格），为了防止同尾年份挖不出来，系统自动在后台深挖10000期组建超级大池
-    if len(df_base) < 1500:
-        with st.spinner(f"🔍 检测到基础数据库深度不足，系统正在后台秘密深度连网提取 2003 至今的全量历史同期节点..."):
-            df_deep_pool = fetch_latest_data(lottery_code, 0, custom_limit=10000)
-            if not df_deep_pool.empty:
-                df_sync_source = df_deep_pool
-            else:
-                df_sync_source = df_base
+    if filter_mode == "历史同期对比":
+        suffix = latest_issue[-3:]
+        df_filtered = df_base[df_base['期号'].astype(str).str.endswith(suffix)]
+        st.info(f"📅 **已锁定历史同期**：正在为您分析历年来尾号为 **{suffix}** 的所有往期数据。")
+    elif filter_mode == "星期独立走势":
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            week_target = st.selectbox("选择开奖日", ["周一", "周三", "周六"] if is_dlt else ["周二", "周四", "周日"])
+            week_map = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周六": 5, "周日": 6}
+        df_filtered = df_base[df_base['星期'] == week_map[week_target]]
+        st.info(f"📆 **已开启星期独立走势**：正在深度挖掘 **{week_target}** 的特有规律。")
     else:
-        df_sync_source = df_base
+        df_filtered = df_base
 
-    # 在安全的大底池中筛选所有年份以 054 结尾的历史记录
-    df_filtered_sync = df_sync_source[df_sync_source['期号'].astype(str).str.endswith(target_suffix)].copy()
+    df = df_filtered.head(period_limit)
+    actual_periods = len(df)
     
-    # 核心校准：按期号由小到大正序排列（2003 -> 2004 -> ...），100%完美还原图1同期对照表走势！
-    df_filtered_sync = df_filtered_sync.sort_values(by='期号', ascending=True).reset_index(drop=True)
-    actual_periods = len(df_filtered_sync)
-    
-    st.error(f"🔥 **纵向同期正序雷达已激活**：正在为您完美还原自2003年起历年 **第 {target_suffix} 期** 的历史纵向轨迹！(共追踪到 {actual_periods} 期同尾老底)")
-    
-    with st.expander(f"📊 点击查看历年第 {target_suffix} 期纵向正序大表 (已按年份由远及近正序排列)", expanded=True):
-        st.dataframe(df_filtered_sync.astype(str), use_container_width=True)
+    with st.expander(f"🟢 数据加载成功！共捕获 {actual_periods} 期精准数据 (展开查看明细)"):
+        st.dataframe(df.astype(str), use_container_width=True)
 
-    # ------------------------------------------------------------
-    # 以下为之前原代码里【所有老功能】100%原封不动恢复
-    # ------------------------------------------------------------
     st.markdown("---")
-    st.subheader("📊 全量冷热号码频次矩阵 (当前全量大底统计)")
-    front_counts, back_counts = calculate_frequencies(df_base, is_dlt)
+    st.subheader("🕵️‍♂️ 形态深度扫描引擎")
+    repeat_num, cons_num = scan_advanced_patterns(df, df_base, is_dlt)
+    rc1, rc2 = st.columns(2)
+    rc1.warning(f"🔁 **前区重号规律**：在这 {actual_periods} 期中，有 **{repeat_num}** 期开出了上一期的落号。(发生概率: **{repeat_num/actual_periods*100:.1f}%**)")
+    rc2.error(f"🔗 **前区连号规律**：在这 {actual_periods} 期中，有 **{cons_num}** 期出现了连号组合。(发生概率: **{cons_num/actual_periods*100:.1f}%**)")
+
+    # 彩色频次矩阵
+    st.markdown("---")
+    st.subheader("🧬 核心出现频次矩阵")
+    front_counts, back_counts = calculate_frequencies(df, is_dlt)
     front_color_class, back_color_class = ("ball-blue", "ball-yellow") if is_dlt else ("ball-red", "ball-blue")
 
     col1, col2 = st.columns(2)
@@ -274,59 +331,83 @@ if not df_base.empty:
         return html_str
 
     with col1:
-        st.markdown(f"### {'🔵' if is_dlt else '🔴'} 前区全量频次 (1-{max_f})")
+        st.markdown(f"### {'🔵' if is_dlt else '🔴'} 前区 (1-{max_f})")
         st.markdown(render_balls(front_counts, front_color_class), unsafe_allow_html=True)
     with col2:
-        st.markdown(f"### {'🟡' if is_dlt else '🔵'} 后区全量频次 (1-{max_b})")
+        st.markdown(f"### {'🟡' if is_dlt else '🔵'} 后区 (1-{max_b})")
         st.markdown(render_balls(back_counts, back_color_class), unsafe_allow_html=True)
 
     st.markdown("---")
-    st.subheader("🧮 原始大底总池明细数据")
-    st.dataframe(df_base.astype(str), use_container_width=True)
+    
+    calc_col, export_col = st.columns([1.5, 1])
+    with calc_col:
+        st.subheader("🧮 基础复式计算器")
+        cc1, cc2 = st.columns(2)
+        with cc1: sel_front = st.number_input(f"选取前区个数 (至少{req_f}个)", min_value=req_f, max_value=max_f, value=req_f)
+        with cc2: sel_back = st.number_input(f"选取后区个数 (至少{req_b}个)", min_value=req_b, max_value=max_b, value=req_b)
+        bets = calculate_bets(sel_front, req_f) * calculate_bets(sel_back, req_b)
+        st.info(f"💰 基础全包共计 **{bets}** 注，需投入 **{bets * 2}** 元。")
 
+    with export_col:
+        st.subheader("🖨️ 导出走势报告")
+        text_report = generate_text_report(f"{lottery_type} {filter_mode} ({actual_periods}期)", front_counts, back_counts, is_dlt)
+        st.download_button("📥 下载统计 txt", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
+
+    # =======================================================
+    # 📐 搬迁改造：012路傻瓜化高级交互缩水控制台面板
+    # =======================================================
     st.markdown("---")
-    st.subheader("🔥 机构级高阶缩水终端 (全量号码配比过滤器)")
+    st.subheader("⚙️ 012路高阶智能化智能缩水控制台")
     
-    # 构建之前代码里原始的 012路 分组
-    f_0 = [i for i in range(1, max_f + 1) if i % 3 == 0]
-    f_1 = [i for i in range(1, max_f + 1) if i % 3 == 1]
-    f_2 = [i for i in range(1, max_f + 1) if i % 3 == 2]
-    
-    b_0 = [i for i in range(1, max_b + 1) if i % 3 == 0]
-    b_1 = [i for i in range(1, max_b + 1) if i % 3 == 1]
-    b_2 = [i for i in range(1, max_b + 1) if i % 3 == 2]
+    with st.expander("📝 查看底层公式与学术概念"):
+        st.markdown("基于《计算公式000.docx》：")
+        st.latex(r"C_n^k = \frac{n!}{k!(n-k)!} \quad \text{(组合大底底数)}")
+        st.markdown("**0路数字**：能被3整除；**1路数字**：除以3余1；**2路数字**：除以3余2。")
 
-    st.markdown("### 👉 调配全量大底 012路 核心比例拉杆")
+    # 分割区间组
+    f_0 = [x for x in range(1, max_f + 1) if x % 3 == 0]
+    f_1 = [x for x in range(1, max_f + 1) if x % 3 == 1]
+    f_2 = [x for x in range(1, max_f + 1) if x % 3 == 2]
+    
+    b_0 = [x for x in range(1, max_b + 1) if x % 3 == 0]
+    b_1 = [x for x in range(1, max_b + 1) if x % 3 == 1]
+    b_2 = [x for x in range(1, max_b + 1) if x % 3 == 2]
+
+    # 构建傻瓜滑动交互操作大区
     st.markdown('<div class="filter-box">', unsafe_allow_html=True)
     
+    # 动态适配初始默认滑块比例
     def_f0, def_f1, def_f2 = (2, 2, 1) if is_dlt else (2, 2, 2)
     def_b0, def_b1, def_b2 = (0, 1, 1) if is_dlt else (0, 1, 0)
     
-    st.markdown(f"**前区 012路 分配 (总数必须等于 {req_f} 个)**")
+    # 用横向三列滑块展现012路，极致还原傻瓜式交互
+    st.markdown(f"#### {'🔵' if is_dlt else '🔴'} 前区 012路数量配比调节器 (总和必须等于 {req_f})")
     sc1, sc2, sc3 = st.columns(3)
-    with sc1: f_req_0 = st.slider("前区 0路 个数", 0, req_f, def_f0, key="orig_f0")
-    with sc2: f_req_1 = st.slider("前区 1路 个数", 0, req_f, def_f1, key="orig_f1")
-    with sc3: f_req_2 = st.slider("前区 2路 个数", 0, req_f, def_f2, key="orig_f2")
+    with sc1: f_req_0 = st.slider("0路出号个数", 0, req_f, def_f0, key="slider_f0")
+    with sc2: f_req_1 = st.slider("1路出号个数", 0, req_f, def_f1, key="slider_f1")
+    with sc3: f_req_2 = st.slider("2路出号个数", 0, req_f, def_f2, key="slider_f2")
     
+    # 实时彩色渲染前区选定比例
     st.markdown(f"""
     <div style='display: flex; gap: 10px; margin-bottom: 20px;'>
-        <div class='ratio-badge' style='color:#6FB1FC; border-color:#6FB1FC;'>前区 0路：现含 {len(f_0)} 选 {f_req_0}</div>
-        <div class='ratio-badge' style='color:#FF4B2B; border-color:#FF4B2B;'>前区 1路：现含 {len(f_1)} 选 {f_req_1}</div>
-        <div class='ratio-badge' style='color:#00E676; border-color:#00E676;'>前区 2路：现含 {len(f_2)} 选 {f_req_2}</div>
+        <div class='ratio-badge' style='color:#6FB1FC; border-color:#6FB1FC;'>前区0路：{f_req_0} 个</div>
+        <div class='ratio-badge' style='color:#FF4B2B; border-color:#FF4B2B;'>前区1路：{f_req_1} 个</div>
+        <div class='ratio-badge' style='color:#00E676; border-color:#00E676;'>前区2路：{f_req_2} 个</div>
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown(f"**后区 012路 分配 (总数必须等于 {req_b} 个)**")
+    st.markdown(f"#### {'🟡' if is_dlt else '🔵'} 后区 012路数量配比调节器 (总和必须等于 {req_b})")
     sbc1, sbc2, sbc3 = st.columns(3)
-    with sbc1: b_req_0 = st.slider("后区 0路 个数", 0, req_b, def_b0, key="orig_b0")
-    with sbc2: b_req_1 = st.slider("后区 1路 个数", 0, req_b, def_b1, key="orig_b1")
-    with sbc3: b_req_2 = st.slider("后区 2路 个数", 0, req_b, def_b2, key="orig_b2")
+    with sbc1: b_req_0 = st.slider("0路出号个数", 0, req_b, def_b0, key="slider_b0")
+    with sbc2: b_req_1 = st.slider("1路出号个数", 0, req_b, def_b1, key="slider_b1")
+    with sbc3: b_req_2 = st.slider("2路出号个数", 0, req_b, def_b2, key="slider_b2")
     
+    # 实时彩色渲染后区选定比例
     st.markdown(f"""
     <div style='display: flex; gap: 10px;'>
-        <div class='ratio-badge' style='color:#6FB1FC; border-color:#6FB1FC;'>后区 0路：现含 {len(b_0)} 选 {b_req_0}</div>
-        <div class='ratio-badge' style='color:#FF4B2B; border-color:#FF4B2B;'>后区 1路：现含 {len(b_1)} 选 {b_req_1}</div>
-        <div class='ratio-badge' style='color:#00E676; border-color:#00E676;'>后区 2路：现含 {len(b_2)} 选 {b_req_2}</div>
+        <div class='ratio-badge' style='color:#6FB1FC; border-color:#6FB1FC;'>后区0路：{b_req_0} 个</div>
+        <div class='ratio-badge' style='color:#FF4B2B; border-color:#FF4B2B;'>后区1路：{b_req_1} 个</div>
+        <div class='ratio-badge' style='color:#00E676; border-color:#00E676;'>后区2路：{b_req_2} 个</div>
     </div>
     """, unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -334,6 +415,7 @@ if not df_base.empty:
     sum_f = f_req_0 + f_req_1 + f_req_2
     sum_b = b_req_0 + b_req_1 + b_req_2
 
+    # 逻辑守卫检测，并进行大底乘法组合数演算
     if sum_f != req_f:
         st.error(f"⚠️ **前区校验失败**：012路分配总数当前为 {sum_f} 个，不满足大底设定的 {req_f} 个！请重新滑动拉杆。")
     elif sum_b != req_b:
@@ -351,22 +433,14 @@ if not df_base.empty:
         st.success(f"🔥 全保形态验证成功：当前配置形态理论极限组合总数为 **{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
         
         if total_filtered_bets > 0:
-            if st.button("🎲 启动终极雷达马尔科夫模拟"):
-                st.info("🎯 系统正根据设定形态全盘推演……前20注极品形态推荐已出：")
-                
-                # 之前代码中原生的号码组生成逻辑
-                chosen_f0 = sorted(random.sample(f_0, f_req_0))
-                chosen_f1 = sorted(random.sample(f_1, f_req_1))
-                chosen_f2 = sorted(random.sample(f_2, f_req_2))
-                final_f = sorted(chosen_f0 + chosen_f1 + chosen_f2)
-                
-                chosen_b0 = sorted(random.sample(b_0, b_req_0))
-                chosen_b1 = sorted(random.sample(b_1, b_req_1))
-                chosen_b2 = sorted(random.sample(b_2, b_req_2))
-                final_b = sorted(chosen_b0 + chosen_b1 + chosen_b2)
-                
-                f_str = " ".join([f"{str(x).zfill(2)}" for x in final_f])
-                b_str = " ".join([f"{str(x).zfill(2)}" for x in final_b])
-                st.code(f"极品第 1 注: [ {f_str} ] + [ {b_str} ]")
+            if st.button("🎲 启动终极雷达：智能筛选 5 注实战精华号码"):
+                st.markdown("#### 🎯 智能全包池内推荐号组：")
+                for i in range(min(5, total_filtered_bets)):
+                    pick_f = sorted(random.sample(f_0, f_req_0) + random.sample(f_1, f_req_1) + random.sample(f_2, f_req_2))
+                    pick_b = sorted(random.sample(b_0, b_req_0) + random.sample(b_1, b_req_1) + random.sample(b_2, b_req_2))
+                    
+                    f_str = " ".join([f"{str(x).zfill(2)}" for x in pick_f])
+                    b_str = " ".join([f"{str(x).zfill(2)}" for x in pick_b])
+                    st.code(f"第 {i+1} 注: [ {f_str} ] + [ {b_str} ]")
 else:
-    st.warning("⚠️ 脱机数据库无数据，请在侧边栏上传。")
+    st.warning("⚠️ **脱机金库暂无数据！** 请通过侧边栏上传 xls/csv。")
