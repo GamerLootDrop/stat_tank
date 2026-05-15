@@ -136,7 +136,8 @@ def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
 @st.cache_data(ttl=5)  # 缓存时间大幅缩短至5秒，满足移动端和PC端极速刷新同步需求
 def load_local_data(lottery_code, uploaded_file=None, target_mode="默认"):
     df_local = pd.DataFrame()
-    source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else (f"{lotxls}" if os.path.exists(f"{lottery_code}.xls") else None))
+    # 🎯 【已修正 NameError 拼写漏洞】：将原本误打的 lotxls 修正为正确的 f"{lottery_code}.xls"
+    source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else (f"{lottery_code}.xls" if os.path.exists(f"{lottery_code}.xls") else None))
     
     if source:
         try:
@@ -240,7 +241,7 @@ with st.sidebar:
     uploaded_file = st.file_uploader("临时投喂本地开奖文件", type=['csv', 'xls', 'xlsx'])
 
 # ==========================================
-# 5. 主画面区 (爆改点：把切换彩种和战术期数彻底提到主页面最顶部！)
+# 5. 主画面区 (彩种和战术期数平铺在页面最顶部，手机端绝对可见)
 # ==========================================
 st.header("🚀 坦克战略指挥中控雷达")
 
