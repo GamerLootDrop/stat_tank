@@ -81,8 +81,6 @@ def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
 
     now_time = time.time()
     
-    # 彻底移除原有的 300秒 拦截器代码，防止手机端缓存卡死
-
     urls = [
         f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={custom_limit}&_t={int(now_time)}", 
         f"https://datachart.500.com/{lottery_code}/history/inc/history.php?limit={custom_limit}&_t={int(now_time)}"
@@ -138,7 +136,7 @@ def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
 @st.cache_data(ttl=5)  # 缓存时间大幅缩短至5秒，满足移动端和PC端极速刷新同步需求
 def load_local_data(lottery_code, uploaded_file=None, target_mode="默认"):
     df_local = pd.DataFrame()
-    source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else (f"{lottery_code}.xls" if os.path.exists(f"{lottery_code}.xls") else None))
+    source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else (f"{lotxls}" if os.path.exists(f"{lottery_code}.xls") else None))
     
     if source:
         try:
@@ -226,7 +224,7 @@ def generate_text_report(title, front_counts, back_counts, is_dlt):
     return report
 
 # ==========================================
-# 4. 侧边栏 (原封不动全部保留，确保PC端布局完整)
+# 4. 侧边栏 (保留后台重刷按钮与Admin上传)
 # ==========================================
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
@@ -234,30 +232,30 @@ with st.sidebar:
     st.markdown("🔗 **[🔙 返回主站系统](/)**") 
     
     if st.button("🔄 解除冷却：强制连网冲刷", use_container_width=True):
-        lottery_code_tmp = 'dlt' if "DLT" in st.session_state.get("canvas_channel", "双色球 (SSQ)") else 'ssq'
         load_local_data.clear() 
         st.rerun() 
 
     st.markdown("---")
-    lottery_type = st.selectbox("🎯 切换演算频道", ["双色球 (SSQ)", "大乐透 (DLT)"], key="canvas_channel")
-    
-    period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=3)
-    
-    st.markdown("---")
     st.markdown("### 🗄️ 数据库管理 (Admin)")
-    uploaded_file = st.file_uploader(f"临时投喂 {lottery_type} 数据", type=['csv', 'xls', 'xlsx'])
+    uploaded_file = st.file_uploader("临时投喂本地开奖文件", type=['csv', 'xls', 'xlsx'])
+
+# ==========================================
+# 5. 主画面区 (爆改点：把切换彩种和战术期数彻底提到主页面最顶部！)
+# ==========================================
+st.header("🚀 坦克战略指挥中控雷达")
+
+# 手机主屏幕大区：头部黄金双选面板
+top_col1, top_col2 = st.columns(2)
+with top_col1:
+    lottery_type = st.selectbox("🎯 切换开奖频道", ["双色球 (SSQ)", "大乐透 (DLT)"], index=1) # 默认大乐透
+with top_col2:
+    period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=3) # 默认30期
 
 is_dlt = "DLT" in lottery_type
 lottery_code = 'dlt' if is_dlt else 'ssq'
 req_f, req_b = (5, 2) if is_dlt else (6, 1)
 max_f, max_b = (35, 12) if is_dlt else (33, 16)
 
-# ==========================================
-# 5. 主画面区
-# ==========================================
-st.header(f"🚀 雷达监测：{lottery_type}")
-
-# 爆改：由于你在手机上最爱用的是历史同期，这里默认启动项直接帮切到“历史同期对比”
 if "filter_mode_state" not in st.session_state:
     st.session_state.filter_mode_state = "历史同期对比"
 
@@ -265,7 +263,7 @@ with st.spinner("📡 正在连线云端检测最新开奖数据..."):
     df_base, new_count = load_local_data(lottery_code, uploaded_file, target_mode=st.session_state.filter_mode_state)
 
 if f"err_{lottery_code}" in st.session_state:
-    st.sidebar.error(f"🚨 联网雷达警告：\n{st.session_state[f'err_{lottery_code}']}\n\n💡 应对方案：请通过下方 Admin 投喂最新的本地文件。")
+    st.error(f"🚨 联网雷达警告：\n{st.session_state[f'err_{lottery_code}']}\n\n💡 应对方案：请通过左侧 Admin 投喂最新的本地文件。")
 
 if not df_base.empty:
     latest_issue = str(df_base.iloc[0]['期号'])
@@ -352,7 +350,7 @@ if not df_base.empty:
         st.download_button("📥 下载统计 txt", data=text_report, file_name=f"{lottery_type}_report.txt", mime="text/plain", use_container_width=True)
 
     # =======================================================
-    # 📐 012路智能化智能缩水控制台面板 (升级为手机端极度友好的加减号键微调布局)
+    # 📐 012路智能化智能缩水控制台面板 (加减号微调防手滑版布局)
     # =======================================================
     st.markdown("---")
     st.subheader("⚙️ 012路高阶智能化智能缩水控制台")
@@ -376,7 +374,6 @@ if not df_base.empty:
     def_f0, def_f1, def_f2 = (1, 3, 1) if is_dlt else (2, 2, 2)
     def_b0, def_b1, def_b2 = (1, 1, 0) if is_dlt else (0, 1, 0)
     
-    # 爆改点：放弃 st.slider，采用带加减微调按钮的 st.number_input，彻底解决小屏幕手机上误触滑错的硬伤！
     st.markdown(f"#### {'🔵' if is_dlt else '🔴'} 前区 012路数量配比调节器 (总和必须等于 {req_f})")
     sc1, sc2, sc3 = st.columns(3)
     with sc1: f_req_0 = st.number_input("0路出号个数", min_value=0, max_value=req_f, value=def_f0, step=1, key="num_f0")
@@ -411,7 +408,7 @@ if not df_base.empty:
     sum_f = f_req_0 + f_req_1 + f_req_2
     sum_b = b_req_0 + b_req_1 + b_req_2
 
-    # 爆改点：逻辑守卫检测，升级为智能提示差额，明确指导手机端用户增减
+    # 逻辑守卫检测与差额智能反馈提示
     if sum_f != req_f:
         diff_f = req_f - sum_f
         if diff_f > 0:
