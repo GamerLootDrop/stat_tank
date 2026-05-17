@@ -26,25 +26,36 @@ st.markdown("""
         text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
     }
     .ball-red { background: radial-gradient(circle at 10px 10px, #FF4B2B, #B31217); box-shadow: 0 0 6px rgba(255, 75, 43, 0.5); }
-    .ball-blue { background: radial-gradient(circle at 10px 10px, #6FB1FC, #0052D4); box-shadow: 0 0 6px rgba(0, 82, 212, 0.5); }
-    .ball-yellow { background: radial-gradient(circle at 10px 10px, #FFD700, #F39C12); color: #333; text-shadow: none; box-shadow: 0 0 6px rgba(243, 156, 18, 0.5); }
+    .ball-blue { background: radial-gradient(circle at 10px 10px, #6FB1FC, #0052D4);
+        box-shadow: 0 0 6px rgba(0, 82, 212, 0.5); }
+    .ball-yellow { background: radial-gradient(circle at 10px 10px, #FFD700, #F39C12);
+        color: #333; text-shadow: none; box-shadow: 0 0 6px rgba(243, 156, 18, 0.5);
+    }
     
     /* 频次横条在手机和电脑上都能自适应紧凑排列 */
     .freq-tag {
-        background-color: #2b2b2b; color: #00E676; padding: 4px 8px;
+        background-color: #2b2b2b;
+        color: #00E676; padding: 4px 8px;
         border-radius: 5px; font-weight: bold; margin-right: 10px;
         border-left: 4px solid #00E676;
-        min-width: 65px; text-align: center; font-size: 13px;
+        min-width: 65px; text-align: center;
+        font-size: 13px;
     }
-    .stat-row { display: flex; align-items: center; margin-bottom: 8px; background: #1E1E1E; padding: 8px; border-radius: 8px;}
-    .filter-box { background: #1E1E1E; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 12px;}
+    .stat-row { display: flex; align-items: center; margin-bottom: 8px; background: #1E1E1E; padding: 8px;
+        border-radius: 8px;}
+    .filter-box { background: #1E1E1E; padding: 15px; border-radius: 10px; border: 1px solid #333;
+        margin-bottom: 12px;}
     
     /* 彻底封死顶部区域：禁止点击、高度归零 */
-    [data-testid="stHeader"], .stApp > header { display: none !important; pointer-events: none !important; height: 0px !important; }
-    #MainMenu, footer, .stDeployButton, .stAppDeployButton, [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
+    [data-testid="stHeader"], .stApp > header { display: none !important;
+        pointer-events: none !important; height: 0px !important; }
+    #MainMenu, footer, .stDeployButton, .stAppDeployButton, [data-testid="stToolbar"] { display: none !important;
+        visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
     
     /* 手机/电脑自适应012路中控UI高亮 */
-    .ratio-badge { background-color: #262626; border: 1px solid #444; padding: 6px 12px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 14px; flex: 1;}
+    .ratio-badge { background-color: #262626;
+        border: 1px solid #444; padding: 6px 12px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 14px;
+        flex: 1;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -136,7 +147,6 @@ def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
 @st.cache_data(ttl=5)  # 缓存时间大幅缩短至5秒，满足移动端和PC端极速刷新同步需求
 def load_local_data(lottery_code, uploaded_file=None, target_mode="默认"):
     df_local = pd.DataFrame()
-    # 🎯 【已修正 NameError 拼写漏洞】：将原本误打的 lotxls 修正为正确的 f"{lottery_code}.xls"
     source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else (f"{lottery_code}.xls" if os.path.exists(f"{lottery_code}.xls") else None))
     
     if source:
@@ -149,13 +159,14 @@ def load_local_data(lottery_code, uploaded_file=None, target_mode="默认"):
                 
             cols_use = [0, 1, 2, 3, 4, 5, 6, 7, 8]
             c_names = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2'] if lottery_code == 'dlt' else ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
-            
+           
             df_raw = df_raw.iloc[:, cols_use]
             df_raw.columns = c_names
             df_raw['前1'] = pd.to_numeric(df_raw['前1'], errors='coerce')
             df_raw = df_raw.dropna(subset=['前1'])
             df_raw['期号'] = df_raw['期号'].astype(str).str.replace(r'\D', '', regex=True)
             df_raw['期号'] = pd.to_numeric(df_raw['期号'], errors='coerce').fillna(0).astype(int)
+          
             for c in c_names[2:]: df_raw[c] = pd.to_numeric(df_raw[c], errors='coerce').fillna(0).astype(int)
             df_local = df_raw[(df_raw['前1']>0)&(df_raw['前1']<=35)].sort_values(by='期号', ascending=False).reset_index(drop=True)
         except Exception: pass
@@ -178,7 +189,7 @@ def load_local_data(lottery_code, uploaded_file=None, target_mode="默认"):
         df_final = df_final.sort_values(by='期号', ascending=False).reset_index(drop=True)
         df_final['日期_解析'] = pd.to_datetime(df_final['日期'], errors='coerce')
         df_final['星期'] = df_final['日期_解析'].dt.dayofweek
-        
+      
     return df_final, new_count
 
 # ==========================================
@@ -281,10 +292,28 @@ if not df_base.empty:
         st.session_state.filter_mode_state = filter_mode
         st.rerun()
     
+    # 🎯 核心修改区：让历史同期支持自动+1预测，并允许玩家手动微调期号
     if filter_mode == "历史同期对比":
-        suffix = latest_issue[-3:]
-        df_filtered = df_base[df_base['期号'].astype(str).str.endswith(suffix)]
-        st.info(f"📅 **已锁定历史同期**：正在为您分析历年来尾号为 **{suffix}** 的所有往期数据。")
+        if '期' in latest_issue:
+            current_period_str = latest_issue.split('期')[0][-3:]
+        else:
+            current_period_str = latest_issue[-3:]
+            
+        default_target_period = int(current_period_str) + 1
+        
+        target_period_int = st.number_input(
+            "🎯 请确认您要预测的目标期号 (系统已自动为您 +1 期)：", 
+            min_value=1, 
+            max_value=160, 
+            value=default_target_period, 
+            step=1
+        )
+        
+        target_period_str = f"{target_period_int:03d}"
+        
+        st.info(f"📅 **已锁定预测同期**：系统正在为您深度调取历年来尾号为 **{target_period_str}** 的所有往期数据！")
+        
+        df_filtered = df_base[df_base['期号'].astype(str).str.endswith(target_period_str)]
     elif filter_mode == "星期独立走势":
         c1, c2 = st.columns([1, 2])
         with c1:
