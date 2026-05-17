@@ -482,15 +482,15 @@ else:
 
 
 # ==========================================
-# 6. 🪓 炮灰晒票反杀引擎 (文本清洗版)
+# 6. 🪓 炮灰晒票反杀引擎 (文本清洗版 + 明细核对)
 # ==========================================
 st.markdown("---")
 st.header("🪓 炮灰晒票反杀引擎")
-st.info("💡 **实战操作指南**：打开别人公众号的【万元大票】或【晒票图片】，用手机长按提取文字（或直接复制数字），全部粘贴到下面框里。无论排版多乱、带不带汉字，本雷达将自动为您剔除杂质，直击冷热痛点！")
+st.info("💡 **实战操作指南**：打开别人公众号的【万元大票】或【晒票图片】，用手机长按提取文字（或直接复制数字），全部粘贴到下面框里。系统将自动过滤杂质并进行冷热对赌分析！")
 
 raw_text = st.text_area("📋 在此“无脑粘贴”晒票文本 (建议集中粘贴前区红球数字)：", height=150, placeholder="例如：\n公众号大票1：02 05 16 19 23 28 31 + 04 12\n票2：红球 03 08 11 15 22 31...")
 
-if st.button("⚡ 启动反杀逻辑：一键出报告", use_container_width=True):
+if st.button("⚡ 启动系统反杀逻辑：一键出报告", use_container_width=True):
     if not raw_text.strip():
         st.warning("⚠️ 弹药库为空！请先粘贴晒票数字！")
     else:
@@ -503,6 +503,18 @@ if st.button("⚡ 启动反杀逻辑：一键出报告", use_container_width=Tru
         if not nums:
             st.error("❌ 未检测到有效的号码，请检查粘贴的内容是否包含数字！")
         else:
+            # ================= 新增：提取明细核对面板 =================
+            with st.expander(f"👀 系统成功提取了 {len(nums)} 个红球数字样本，点击核对抓取明细", expanded=True):
+                st.markdown("**以下是系统从您的文本中清洗出的所有纯数字：**")
+                # 把提取出来的数字格式化一下，方便观看
+                formatted_nums = [str(x).zfill(2) for x in nums]
+                # 每 15 个数字换一行显示，更清晰
+                display_text = ""
+                for i in range(0, len(formatted_nums), 15):
+                    display_text += " ".join(formatted_nums[i:i+15]) + "\n"
+                st.code(display_text)
+            # =========================================================
+
             counts = Counter(nums)
             sorted_counts = counts.most_common()
             
@@ -529,7 +541,6 @@ if st.button("⚡ 启动反杀逻辑：一键出报告", use_container_width=Tru
             
             # ================= 输出华丽的分析报告 =================
             st.markdown("### 📊 AI 反杀分析实战报告")
-            st.success(f"✅ 成功从杂乱文本中提取出 **{len(nums)}** 个有效数字样本！进行深度解剖：")
             
             rc1, rc2 = st.columns(2)
             with rc1:
