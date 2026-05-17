@@ -85,7 +85,7 @@ if not st.session_state.authenticated:
 # ==========================================
 def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
     """
-    高精度实时全网增量同步爬虫引擎 (已爆改：带随机时间戳击穿，保证手机端和电脑端每次进来都是最新数据)
+    高精度实时全网增量同步爬虫引擎 (带随机时间戳击穿，保证手机端和电脑端每次进来都是最新数据)
     """
     if f"err_{lottery_code}" in st.session_state:
         del st.session_state[f"err_{lottery_code}"]
@@ -292,15 +292,17 @@ if not df_base.empty:
         st.session_state.filter_mode_state = filter_mode
         st.rerun()
     
-    # 🎯 核心修改区：让历史同期支持自动+1预测，并允许玩家手动微调期号
     if filter_mode == "历史同期对比":
+        # 1. 提取当前最新期号的后三位数字
         if '期' in latest_issue:
             current_period_str = latest_issue.split('期')[0][-3:]
         else:
             current_period_str = latest_issue[-3:]
             
+        # 2. 自动计算玩家真正要打的“下一期”（默认+1）
         default_target_period = int(current_period_str) + 1
         
+        # 3. 增加交互微调器：客户想分析哪期，自己决定！默认锁定下一期。
         target_period_int = st.number_input(
             "🎯 请确认您要预测的目标期号 (系统已自动为您 +1 期)：", 
             min_value=1, 
@@ -309,10 +311,12 @@ if not df_base.empty:
             step=1
         )
         
+        # 4. 格式化为3位数后缀（如 55 -> "055"）
         target_period_str = f"{target_period_int:03d}"
         
         st.info(f"📅 **已锁定预测同期**：系统正在为您深度调取历年来尾号为 **{target_period_str}** 的所有往期数据！")
         
+        # 5. 过滤出真正的预测目标历史库
         df_filtered = df_base[df_base['期号'].astype(str).str.endswith(target_period_str)]
     elif filter_mode == "星期独立走势":
         c1, c2 = st.columns([1, 2])
@@ -475,3 +479,81 @@ if not df_base.empty:
                     st.code(f"第 {i+1} 注: [ {f_str} ] + [ {b_str} ]")
 else:
     st.warning("⚠️ **脱机金库暂无数据！** 请通过侧边栏上传 xls/csv。")
+
+
+# ==========================================
+# 6. 🪓 炮灰晒票反杀引擎 (文本清洗版)
+# ==========================================
+st.markdown("---")
+st.header("🪓 炮灰晒票反杀引擎")
+st.info("💡 **实战操作指南**：打开别人公众号的【万元大票】或【晒票图片】，用手机长按提取文字（或直接复制数字），全部粘贴到下面框里。无论排版多乱、带不带汉字，本雷达将自动为您剔除杂质，直击冷热痛点！")
+
+raw_text = st.text_area("📋 在此“无脑粘贴”晒票文本 (建议集中粘贴前区红球数字)：", height=150, placeholder="例如：\n公众号大票1：02 05 16 19 23 28 31 + 04 12\n票2：红球 03 08 11 15 22 31...")
+
+if st.button("⚡ 启动反杀逻辑：一键出报告", use_container_width=True):
+    if not raw_text.strip():
+        st.warning("⚠️ 弹药库为空！请先粘贴晒票数字！")
+    else:
+        # 1. 超级正则清洗：把所有 01-35 的数字全抠出来，干掉所有汉字、符号、乱码
+        matches = re.findall(r'\b(0?[1-9]|[1-2][0-9]|3[0-5])\b', raw_text)
+        
+        # 统一转成整数
+        nums = [int(x) for x in matches]
+        
+        if not nums:
+            st.error("❌ 未检测到有效的号码，请检查粘贴的内容是否包含数字！")
+        else:
+            counts = Counter(nums)
+            sorted_counts = counts.most_common()
+            
+            # 2. 划定炮灰区 (抓出出现次数最多的前 6 个号码)
+            hot_nums = [x[0] for x in sorted_counts[:6]]
+            
+            # 3. 划定潜伏区 (出现次数少于等于1次的，或者根本没在晒票里出现的绝对冷号)
+            max_n = max_f if 'max_f' in locals() else (35 if is_dlt else 33)
+            all_possible = set(range(1, max_n + 1))
+            appeared_nums = set(nums)
+            cold_nums = list(all_possible - appeared_nums) # 一次没出现的
+            low_freq_nums = [x[0] for x in sorted_counts if x[1] == 1] # 只出现1次的
+            potential_nums = sorted(list(set(cold_nums + low_freq_nums)))
+            
+            # 4. 执行左右偏移法 (+/- 1 或 2 身位)
+            offset_recommend = set()
+            for h in hot_nums:
+                for offset in [-2, -1, 1, 2]:
+                    target = h + offset
+                    # 如果偏移后的号码在合法区间，且不是大热炮灰号，就加入推荐阵地
+                    if 1 <= target <= max_n and target not in hot_nums:
+                        offset_recommend.add(target)
+            offset_recommend = sorted(list(offset_recommend))
+            
+            # ================= 输出华丽的分析报告 =================
+            st.markdown("### 📊 AI 反杀分析实战报告")
+            st.success(f"✅ 成功从杂乱文本中提取出 **{len(nums)}** 个有效数字样本！进行深度解剖：")
+            
+            rc1, rc2 = st.columns(2)
+            with rc1:
+                st.markdown("<div class='filter-box' style='border-color:#FF4B2B;'>", unsafe_allow_html=True)
+                st.markdown("#### ☠️ 绝对炮灰榜 (诱饵号)")
+                st.markdown("这些是被大众资金疯狂推崇的超级大热号，**建议直接作为死号拉黑，绝不碰！**")
+                hot_str = " ".join([f"<span class='ball ball-red' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</span>" for x in hot_nums])
+                st.markdown(hot_str, unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+            with rc2:
+                st.markdown("<div class='filter-box' style='border-color:#00E676;'>", unsafe_allow_html=True)
+                st.markdown("#### 💎 黄金潜伏区 (盲区号)")
+                st.markdown("大众晒票完美避开的冷区！这些几乎没人买，**极易爆出大冷门，建议从中挑胆！**")
+                # 只展示前15个潜伏号防止太长
+                pot_str = " ".join([f"<span class='ball ball-blue' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</span>" for x in potential_nums[:15]])
+                st.markdown(pot_str + ("..." if len(potential_nums)>15 else ""), unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+            st.markdown("---")
+            st.markdown("#### 🎯 左右偏移突击阵地")
+            st.info("💡 **战术逻辑**：系统已自动规避上方的【炮灰号】，并在其左右 1~2 个身位进行火力覆盖。直接从以下红球阵地挑号组单！")
+            
+            offset_str = " ".join([f"<span class='ball ball-yellow' style='display:inline-flex;margin:4px;'>{str(x).zfill(2)}</span>" for x in offset_recommend])
+            st.markdown(f"<div style='background:#2b2b2b; padding:15px; border-radius:10px; text-align:center;'>{offset_str}</div>", unsafe_allow_html=True)
+            
+            st.balloons() # 跑完报告放个特效庆祝一下
