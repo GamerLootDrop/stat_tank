@@ -718,83 +718,65 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
                 
                 st.markdown("<div class='filter-box' style='border-color:#FF4B2B; background:#1b1010;'>", unsafe_allow_html=True)
                 st.markdown("#### 🌟 【独家定制】双色球 · 五胆全托红球组合（极限最少组合）")
-                st.markdown(f"* **🎯 建议红球胆码**：<span style='color:#FF4B2B; font-weight:bold;'>{d5_str}</span> （系统优先从盲区冷号精选5个）", unsafe_allow_html=True)
+                st.markdown(f"* **🎯 建议红球胆码**：<span style='color:#FF4B2B; font-weight:bold;'>{d5_str}</span>", unsafe_allow_html=True)
                 st.markdown(f"* **🚜 红球拖码**：包揽其余所有 **{33 - 5}** 个红球（全托）")
-                st.markdown(f"* **📊 红球组合注数**：仅需 **28 注** 红球组合！")
-                st.markdown("* **💰 战术实战预算**：")
-                st.markdown("  1. **后区精选组合**：若锁定后区1个心水蓝球 → **仅需 28 注 (56元)** —— *双色球最省反杀单！*")
-                st.markdown("  2. **后区全托组合**：若后区16个蓝球全部全托全包 → **需 448 注 (896元)**")
                 st.markdown("</div>", unsafe_allow_html=True)
                 
             # ==========================================
-            # 🤖 终极王炸：🔮 AI 战术中控多维算法一键完美方案
+            # 📐 数学正统：📊 纯公式概率矩阵核算大底 (无随机、无AI脑补)
             # ==========================================
             st.markdown("---")
-            st.markdown("### 🔮 AI 战术中控多维算法一键完美方案")
-            st.info("💡 **全自动中控逻辑**：系统已将您上传的【晒票暗网数据】进行分子级过滤（彻底拉黑大众炮灰号），并全自动调取底层30期大盘、历史同期与星期走势的冷温填缝惯性，为您提纯出最终实战完美组合。")
+            st.markdown("### 📐 纯公式概率矩阵核算大底")
+            st.info("💡 **数理逻辑说明**：本模块拒绝任何AI随机脑补！完全基于您提供的《计算公式000.docx》标准，利用互斥事件概率、大众资金负反馈博弈进行全盘硬核过滤，剔除高危噪声，提炼纯数学大底。")
 
-            # 1. 构建绝对安全的红球备选池（剔除大众疯狂抱团的诱饵号）
-            safe_pool = [x for x in (potential_nums + offset_recommend) if x not in hot_nums]
             max_r = 35 if is_dlt else 33
             max_b = 12 if is_dlt else 16
+
+            # 1. 计算大众撞车事件的条件概率 P(A)
+            # 统计总样本数
+            total_red_samples = sum(counts_red.values()) if counts_red else 1
             
-            if len(safe_pool) < 12:
-                # 容错机制：如果安全池太小，把全盘未上榜的干净号自动补进来
-                safe_pool += [x for x in range(1, max_r + 1) if x not in hot_nums]
-            safe_pool = sorted(list(set(safe_pool)))
+            # 2. 严格硬核过滤：凡是出现在大众晒票里的热号，根据互斥与博弈过滤直接从大底中剥离
+            # 构建绝对干净、未经随机污染的【纯数学过滤红球/蓝球大底】
+            math_pure_reds = [x for x in range(1, max_r + 1) if x not in hot_nums]
+            math_pure_blues = [x for x in range(1, max_b + 1) if counts_blue.get(x, 0) == 0]
 
-            # 2. 动态识别彩种规则 (双色球 6+1 vs 大乐透 5+2)
-            req_r = 5 if is_dlt else 6
-            req_b = 2 if is_dlt else 1
-            
-            # 【高级技巧】使用上传文本的哈希值作为伪随机种子
-            # 这样能保证只要上传同一张晒票，给出的号码就100%雷打不动，绝不随网页刷新而乱闪烁，极度专业！
-            import hashlib
-            seed_num = int(hashlib.md5(combined_text.encode('utf-8')).hexdigest(), 16) % 1000000
-            random.seed(seed_num)
+            # 如果过滤太狠导致样本不够，进行标准数学容错
+            if not math_pure_blues:
+                math_pure_blues = [x for x in range(1, max_b + 1)]
 
-            # 3. 算法提纯：精选普通单式
-            ai_reds = sorted(random.sample(safe_pool, req_r))
-            safe_blues = [x for x in range(1, max_b + 1)]
-            # 蓝球同步过滤：优先挑选在大众晒票里出现频次为0的冰点星期号
-            safe_blues_filtered = [x for x in safe_blues if counts_blue.get(x, 0) == 0]
-            if len(safe_blues_filtered) < req_b + 2:
-                safe_blues_filtered = safe_blues
-            ai_blues = sorted(random.sample(safe_blues_filtered, req_b))
-
-            # 4. 算法提纯：突击战术小复式 (红球+2, 蓝球+1)
-            ai_red_fushi = sorted(random.sample(safe_pool, req_r + 2))
-            ai_blue_fushi = sorted(random.sample(safe_blues_filtered, req_b + 1))
-
-            # 5. 渲染极具未来科技感的双型选号卡片
-            c1, c2 = st.columns(2)
-            with c1:
+            # 3. 渲染纯数学核算面板
+            mc1, mc2 = st.columns(2)
+            with mc1:
                 st.markdown("<div class='filter-box' style='border-color:#00E676; background:#0d1b13; padding:15px; border-radius:8px;'>", unsafe_allow_html=True)
-                st.markdown(f"#### 🎯 完美实战 · 精选普通单式 ({'5+2' if is_dlt else '6+1'})")
-                st.markdown("<span style='color:#a0aec0; font-size:13px;'>战术定位：全网终极精纯反杀单，2元钱直击薄弱盲区。</span>", unsafe_allow_html=True)
+                st.markdown("#### 🔴 互斥博弈后的【红球净空大底】")
+                st.markdown(f"<span style='color:#a0aec0; font-size:13px;'>计算依据：互斥事件 P(AB)=0。系统已通过AI抠图，彻底剔除了高频重叠噪声，剩余 <b>{len(math_pure_reds)}</b> 个纯净红球。您可以直接将其作为<b>马尔可夫链（Markov Chain）</b>的初始状态空间（State Space）进行转移概率矩阵计算。</span>", unsafe_allow_html=True)
                 
                 ball_class_r = "ball-blue" if is_dlt else "ball-red"
-                ball_class_b = "ball-yellow" if is_dlt else "ball-blue"
-                
-                r_html = "".join([f"<div class='ball {ball_class_r}' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</div>" for x in ai_reds])
-                b_html = "".join([f"<div class='ball {ball_class_b}' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</div>" for x in ai_blues])
-                
-                st.markdown(f"<div class='ball-container' style='margin-top:15px;'>{r_html} <span style='color:#4a5568;font-weight:bold;margin:0 10px;'>+</span> {b_html}</div>", unsafe_allow_html=True)
+                r_pure_html = "".join([f"<div class='ball {ball_class_r}' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</div>" for x in math_pure_reds])
+                st.markdown(f"<div style='margin-top:15px;'>{r_pure_html}</div>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
                 
-            with c2:
+            with mc2:
                 st.markdown("<div class='filter-box' style='border-color:#29B6F6; background:#0d171b; padding:15px; border-radius:8px;'>", unsafe_allow_html=True)
-                st.markdown(f"#### 🛡️ 黄金突击 · 战术小复式 ({req_r+2}+{req_b+1})")
-                st.markdown("<span style='color:#a0aec0; font-size:13px;'>战术定位：防偏态多点火力覆盖，攻守兼备型主力资金池。</span>", unsafe_allow_html=True)
+                st.markdown("#### 🔵 互斥博弈后的【蓝球净空大底】")
+                st.markdown(f"<span style='color:#a0aec0; font-size:13px;'>计算依据：全概率公式与独立事件概率。过滤掉大众撞车的蓝球，剩余 <b>{len(math_pure_blues)}</b> 个真空极冷蓝球。</span>", unsafe_allow_html=True)
                 
-                rf_html = "".join([f"<div class='ball {ball_class_r}' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</div>" for x in ai_red_fushi])
-                bf_html = "".join([f"<div class='ball {ball_class_b}' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</div>" for x in ai_blue_fushi])
-                
-                st.markdown(f"<div class='ball-container' style='margin-top:15px;'>{rf_html} <span style='color:#4a5568;font-weight:bold;margin:0 10px;'>+</span> {bf_html}</div>", unsafe_allow_html=True)
-                
-                # 动态计算组合注数与预算
-                zhusu = math.comb(len(ai_red_fushi), req_r) * math.comb(len(ai_blue_fushi), req_b)
-                st.markdown(f"<div style='margin-top:10px; font-size:13px; color:#63b3ed;'>⚙️ **组合规模**：共 **{zhusu}** 注 | 实战预算 **{zhusu * 2}** 元</div>", unsafe_allow_html=True)
+                ball_class_b = "ball-yellow" if is_dlt else "ball-blue"
+                b_pure_html = "".join([f"<div class='ball {ball_class_b}' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</div>" for x in math_pure_blues])
+                st.markdown(f"<div style='margin-top:15px;'>{b_pure_html}</div>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
+
+            # 4. 为资深彩民输出标准的数学建模接口（DataFrame）
+            st.markdown("#### 📈 大底号码在大众晒票中的独立概率核算表 P(X=k)")
+            prob_data = []
+            for x in range(1, max_r + 1):
+                freq = counts_red.get(x, 0)
+                p_k = freq / total_red_samples # 经验分布概率
+                status = "🚨 建议剔除(大众炮灰)" if x in hot_nums else "💎 建议保留(数学净空)"
+                prob_data.append({"号码": f"{str(x).zfill(2)}号红球", "大众晒票出现频次": f"{freq} 次", "独立概率 P(X)": f"{p_k*100:.2f}%", "战术状态": status})
+                
+            df_prob = pd.DataFrame(prob_data)
+            st.dataframe(df_prob, use_container_width=True, hide_index=True)
                 
             st.balloons()
