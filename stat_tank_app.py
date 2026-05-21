@@ -494,24 +494,65 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
             sorted_red = counts_red.most_common()
             sorted_blue = counts_blue.most_common()
             
-            # ================= 新增：晒票所有号码出现次数统计看板 =================
-            st.markdown("### 📊 晒票所有号码出场频次热度表")
+            # ================= 完美升级：多维矩阵热力反杀选号盘 =================
+            st.markdown("### 📊 晒票所有号码多维热力反杀盘")
+            st.info("💡 **热力图说明**：号码按选号盘整齐平铺。🔥 颜色越红（深红/鲜红）代表大众资金撞车越严重，属于**绝对炮灰区**；❄️ 蓝色或深灰代表资金真空盲区，极易爆冷，属于**黄金潜伏区**！")
+
+            # 准备颜色映射辅助函数
+            def get_heat_color(num, counts_dict, is_blue_ball=False):
+                freq = counts_dict.get(num, 0)
+                if freq == 0:
+                    return "#1e293b" # 没出现过，冷色调暗夜底色
+                
+                max_freq = max(counts_dict.values()) if counts_dict else 1
+                if max_freq == 0: max_freq = 1
+                ratio = freq / max_freq
+                
+                if not is_blue_ball:
+                    # 红球热力：根据占比从浅橘红到深血红
+                    if ratio > 0.7: return "#B31217" # 爆热（深血红）
+                    elif ratio > 0.4: return "#FF4B2B" # 炽热（火红）
+                    else: return "#FF8A75" # 温热（浅红）
+                else:
+                    # 蓝球热力：从浅蓝到深海蓝
+                    if ratio > 0.7: return "#002266" # 爆热蓝
+                    elif ratio > 0.4: return "#0052D4" # 炽热蓝
+                    else: return "#64B5F6" # 温热蓝
+
             tc1, tc2 = st.columns(2)
             with tc1:
-                st.markdown("#### 🔴 晒票红球热度排行 (前区)")
-                html_r = ""
-                for num, freq in sorted_red:
-                    html_r += f"<span style='background:#B31217; color:white; padding:3px 8px; border-radius:4px; margin-right:5px; display:inline-block; margin-bottom:5px;'>{str(num).zfill(2)}码: {freq}次</span>"
-                st.markdown(html_r, unsafe_allow_html=True)
+                st.markdown("#### 🔴 前区红球大众热力选号矩阵")
+                max_red_num = 35 if is_dlt else 33
+                html_red_matrix = "<div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; max-width: 450px;'>"
+                for i in range(1, max_red_num + 1):
+                    freq = counts_red.get(i, 0)
+                    bg_color = get_heat_color(i, counts_red, is_blue_ball=False)
+                    border_style = "border: 2px solid #FF4B2B;" if freq > 0 else "border: 1px solid #475569;"
+                    html_red_matrix += f"""
+                    <div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'>
+                        <b style='font-size:15px;'>{str(i).zfill(2)}</b><br>
+                        <span style='font-size:11px; opacity:0.85;'>{freq}次</span>
+                    </div>
+                    """
+                html_red_matrix += "</div>"
+                st.markdown(html_red_matrix, unsafe_allow_html=True)
+                
             with tc2:
-                st.markdown("#### 🔵 晒票蓝球热度排行 (后区)")
-                html_b = ""
-                if sorted_blue:
-                    for num, freq in sorted_blue:
-                        html_b += f"<span style='background:#0052D4; color:white; padding:3px 8px; border-radius:4px; margin-right:5px; display:inline-block; margin-bottom:5px;'>{str(num).zfill(2)}码: {freq}次</span>"
-                else:
-                    html_b = "<span style='color:#888;'>暂未捕捉到清晰的蓝球切分样本，可在备用框用 + 号分隔补充</span>"
-                st.markdown(html_b, unsafe_allow_html=True)
+                st.markdown("#### 🔵 后区蓝球大众热力选号矩阵")
+                max_blue_num = 12 if is_dlt else 16
+                html_blue_matrix = "<div style='display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-width: 450px;'>"
+                for i in range(1, max_blue_num + 1):
+                    freq = counts_blue.get(i, 0)
+                    bg_color = get_heat_color(i, counts_blue, is_blue_ball=True)
+                    border_style = "border: 2px solid #0052D4;" if freq > 0 else "border: 1px solid #475569;"
+                    html_blue_matrix += f"""
+                    <div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'>
+                        <b style='font-size:15px;'>{str(i).zfill(2)}</b><br>
+                        <span style='font-size:11px; opacity:0.85;'>{freq}次</span>
+                    </div>
+                    """
+                html_blue_matrix += "</div>"
+                st.markdown(html_blue_matrix, unsafe_allow_html=True)
             
             # 划定红球炮灰区
             hot_nums = [x[0] for x in sorted_red[:6]]
