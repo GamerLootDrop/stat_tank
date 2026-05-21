@@ -723,14 +723,13 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
                 st.markdown("</div>", unsafe_allow_html=True)
                 
             # ======================================================================
-            # 📐 数学正统：📊 纯公式全维度交集概率矩阵核算大底 (全期数完美自适应完全体)
+            # 📐 数学正统：📊 纯公式全维度交集概率矩阵核算大底 (全期数自适应 & 蓝球柔性过滤完全体)
             # ======================================================================
             st.markdown("---")
             st.markdown("### 📐 纯公式全维度数据融聚选号中控")
             
-            # 动态获取当前滑块或选择器的文本描述（支持5, 10, 29+, 30, 50, 100等所有模式）
             current_period_desc = str(history_limit) if 'history_limit' in locals() else "当前选择"
-            st.info(f"💡 **四合一全自适应决策链**：核心选号卡片已无缝接管前端选定的 **【{current_period_desc}】** 历史走势池！结合历史同期状态与今日星期爆发态，最后经过AI晒票数据的【互斥事件 P(AB)=0 负反馈强力排雷】，为您提纯最终准确方案。")
+            st.info(f"💡 **四合一全自适应决策链**：核心选号卡片已无缝接管前端选定的 **【{current_period_desc}】** 历史走势池！结合历史同期与今日星期爆发态，通过AI晒票数据实施【概率期望加权】，为您提纯最终准确方案。")
 
             max_r = 35 if is_dlt else 33
             max_b = 12 if is_dlt else 16
@@ -740,7 +739,6 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
             # ------------------------------------------------------------------
             # 管道 1：动态捕捉前端任何期数池（含5、10、29+、30、50、100期）
             # ------------------------------------------------------------------
-            # 提取当前期数热度排名前15的红球与前6的蓝球作为“高概率核心形态”
             recent_red_pool = [x[0] for x in sorted_red[:15]] if 'sorted_red' in locals() and sorted_red else list(range(1, max_r+1))
             history_tongqi_pool = [x[0] for x in sorted_red_history[:15]] if 'sorted_red_history' in locals() and sorted_red_history else list(range(1, max_r+1))
             weekday_pool = [x[0] for x in sorted_red_weekday[:15]] if 'sorted_red_weekday' in locals() and sorted_red_weekday else list(range(1, max_r+1))
@@ -749,42 +747,47 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
             weekday_blue_pool = [x[0] for x in sorted_blue_weekday[:6]] if 'sorted_blue_weekday' in locals() and sorted_blue_weekday else list(range(1, max_b+1))
 
             # ------------------------------------------------------------------
-            # 管道 2：条件概率加权核算（若撞车当前晒票大热号，则实行互斥抹杀）
+            # 管道 2：红球互斥博弈加权 (撞车大众大热号直接归零)
             # ------------------------------------------------------------------
             red_scores = {}
             for num in range(1, max_r + 1):
                 score = 0
-                if num in recent_red_pool: score += 3       # 动态匹配滑块期数（含29+期）
-                if num in history_tongqi_pool: score += 2   # 同期权重
-                if num in weekday_pool: score += 2          # 星期爆发权重
-                
-                # 数学硬核互斥：如果撞车了当前大众买得最火的6个炮灰号，底分直接乘以0清空！
+                if num in recent_red_pool: score += 3       
+                if num in history_tongqi_pool: score += 2   
+                if num in weekday_pool: score += 2          
                 if num in hot_nums:
-                    score = 0
+                    score = 0  # 红球数量多，严格执行一票否决
                 red_scores[num] = score
 
+            # ------------------------------------------------------------------
+            # 管道 3：蓝球柔性反向期望加权 (避免全盘撞车导致蓝球归零)
+            # ------------------------------------------------------------------
             blue_scores = {}
             for num in range(1, max_b + 1):
                 score = 0
                 if num in recent_blue_pool: score += 3
                 if num in weekday_blue_pool: score += 2
-                if counts_blue.get(num, 0) > 0: # 剔除晒票里散户扎堆的蓝球噪声
-                    score = 0
+                
+                # 柔性惩罚机制：不再一票否决，而是扣减由于散户买入带来的热度分
+                # 散户买得越多，惩罚越重。以此筛选出晒票里的真空冷眼蓝球
+                blue_strike = counts_blue.get(num, 0)
+                score = score - (blue_strike * 2)  
                 blue_scores[num] = score
 
             # ------------------------------------------------------------------
-            # 管道 3：确定性降序收敛排序（绝不随网页刷新而随机闪烁）
+            # 管道 4：确定性降序收敛排序
             # ------------------------------------------------------------------
             sorted_math_reds = [num for num, score in sorted(red_scores.items(), key=lambda x: (x[1], -x[0]), reverse=True) if score > 0]
-            sorted_math_blues = [num for num, score in sorted(blue_scores.items(), key=lambda x: (x[1], -x[0]), reverse=True) if score > 0]
+            # 蓝球允许负分或0分参与排序，确保绝对不会出现空集
+            sorted_math_blues = [num for num, score in sorted(blue_scores.items(), key=lambda x: (x[1], -x[0]), reverse=True)]
 
-            # 确定性容错机制
+            # 确定性大底兜底保护
             if len(sorted_math_reds) < req_r + 2:
                 sorted_math_reds = [x for x in range(1, max_r + 1) if x not in hot_nums]
             if len(sorted_math_blues) < req_b + 1:
-                sorted_math_blues = [x for x in range(1, max_b + 1) if counts_blue.get(x, 0) == 0]
+                sorted_math_blues = [x for x in range(1, max_b + 1)]
 
-            # 稳健提取最终实战结果
+            # 精准收紧，切出最终红蓝球方案
             final_math_reds = sorted(sorted_math_reds[:req_r])
             final_math_blues = sorted(sorted_math_blues[:req_b])
             
@@ -792,7 +795,7 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
             fushi_math_blues = sorted(sorted_math_blues[:req_b + 1])
 
             # ------------------------------------------------------------------
-            # 管道 4：流线型未来科技感前端渲染
+            # 管道 5：流线型未来科技感前端渲染 (加回漂亮的蓝色/黄色蓝球球体)
             # ------------------------------------------------------------------
             rc1, rc2 = st.columns(2)
             ball_class_r = "ball-blue" if is_dlt else "ball-red"
@@ -801,7 +804,7 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
             with rc1:
                 st.markdown("<div class='filter-box' style='border-color:#00E676; background:#0d1b13; padding:15px; border-radius:8px;'>", unsafe_allow_html=True)
                 st.markdown(f"#### 🎯 多维联动 · 精选准确单式 ({'5+2' if is_dlt else '6+1'})")
-                st.markdown(f"<span style='color:#a0aec0; font-size:13px;'>当前方案已完美接入 <b>{current_period_desc}期</b> 走势大盘，并在底层完成了互斥概率对齐。</span>", unsafe_allow_html=True)
+                st.markdown(f"<span style='color:#a0aec0; font-size:13px;'>当前方案已完美接入 <b>{current_period_desc}期</b> 走势大盘，并动态精选大众薄弱真空蓝球。</span>", unsafe_allow_html=True)
                 
                 r_html = "".join([f"<div class='ball {ball_class_r}' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</div>" for x in final_math_reds])
                 b_html = "".join([f"<div class='ball {ball_class_b}' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</div>" for x in final_math_blues])
