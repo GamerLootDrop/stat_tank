@@ -509,7 +509,7 @@ else:
 # ==========================================
 st.markdown("---")
 st.header("🪓 炮灰晒票反杀引擎 (红蓝全统计+核心胆拖最少组合版)")
-st.info("💡 **实战操作指南**：批量上传晒票截图或直接粘贴文本，系统将调用【百度AI视觉大脑】全自动抠出所有红蓝球号码，并推演出欧克老哥要求的【精选最省钱胆拖全托方案】！")
+st.info("💡 **实战操作指南**：批量上传晒票截图或直接粘贴文本，系统将调用【百度AI视觉大脑】全自动抠出所有红蓝球号码，【精选最省钱胆拖全托方案】！")
 
 # AI传图核心区
 uploaded_images = st.file_uploader("🖼️ 点此批量上传晒票截图（支持一次选中多张照片）", type=['png', 'jpg', 'jpeg', 'webp'], accept_multiple_files=True)
@@ -549,7 +549,7 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
                     st.markdown("**🔵 成功抠出的蓝球样本：**")
                     st.code(" ".join([str(x).zfill(2) for x in blue_nums]))
             
-            # 统计红蓝球频次（响应欧克用户的最新需求）
+            # 统计红蓝球频次（响应用户的最新需求）
             counts_red = Counter(red_nums)
             counts_blue = Counter(blue_nums)
             
@@ -654,7 +654,7 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
             offset_str = " ".join([f"<span class='ball ball-yellow' style='display:inline-flex;margin:4px;'>{str(x).zfill(2)}</span>" for x in offset_recommend])
             st.markdown(f"<div style='background:#2b2b2b; padding:15px; border-radius:10px; text-align:center;'>{offset_str}</div>", unsafe_allow_html=True)
             
-            # ================= 新增：🎯 核心胆拖全托最省方案推演（欧克老哥点名定制） =================
+            # ================= 新增：🎯 核心胆拖全托最省方案推演（定制） =================
             st.markdown("---")
             st.markdown("### 🏆 核心战术胆拖方案推演（最省组合全托列出）")
             
