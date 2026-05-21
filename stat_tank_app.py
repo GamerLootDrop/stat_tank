@@ -30,95 +30,114 @@ def get_baidu_token(api_key, secret_key):
 def baidu_ocr(image_bytes, token):
     """调用百度网络图片文字识别提取文本"""
     url = "https://aip.baidubce.com/rest/2.0/ocr/v1/webimage?access_token=" + token
-    payload = {'image': base64.b64encode(image_bytes).decode('utf-8')}
-    headers = {'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'}
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    
+    # 转换为 Base64 编码
+    img_b64 = base64.b64encode(image_bytes).decode('utf-8')
+    data = {'image': img_b64}
+    
     try:
-        res = requests.post(url, headers=headers, data=payload, timeout=8)
-        words_result = res.json().get("words_result", [])
-        return " ".join([item.get("words", "") for item in words_result])
+        response = requests.post(url, data=data, headers=headers, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            words_result = result.get('words_result', [])
+            return [item.get('words') for item in words_result if item.get('words')]
     except Exception:
-        return ""
+        pass
+    return []
+
 
 # ==========================================
-# 🏅 新增：红蓝球智能分离清洗核心算法
+# 1. 网页样式与核心数据爬虫层
 # ==========================================
-def parse_red_blue_from_text(text, is_dlt=True):
-    """智能从混杂的OCR/文本中，切分出晒票的红球与蓝球"""
-    red_balls = []
-    blue_balls = []
-    
-    # 规整常见中文分隔符
-    text_clean = text.replace('：', ':').replace('，', ',').replace('；', ';').replace('—', '-')
-    lines = re.split(r'[\n\r;,\t]', text_clean)
-    
-    for line in lines:
-        line = line.strip()
-        if not line: continue
-        
-        # 战术一：寻找明显的红蓝分割标识（如 +, -, |, 蓝, 后区）
-        if any(sep in line for sep in ['+', '-', '|', '蓝', '后']):
-            parts = re.split(r'[\+\-\|蓝后]', line, maxsplit=1)
-            r_part = re.findall(r'\b(0?[1-9]|[1-2][0-9]|3[0-5])\b', parts[0])
-            if is_dlt:
-                b_part = re.findall(r'\b(0?[1-9]|1[0-2])\b', parts[1])
-            else:
-                b_part = re.findall(r'\b(0?[1-9]|1[0-6])\b', parts[1])
-            
-            red_balls.extend([int(x) for x in r_part if (is_dlt and int(x)<=35) or (not is_dlt and int(x)<=33)])
-            blue_balls.extend([int(x) for x in b_part])
-        else:
-            # 战术二：无明显分隔符，抓出单行所有有效数字，按大单格式智能切分
-            all_nums = re.findall(r'\b([0-3]?[0-9])\b', line)
-            all_nums = [int(x) for x in all_nums if 1 <= int(x) <= 35]
-            if not all_nums: continue
-            
-            if is_dlt and len(all_nums) >= 7:
-                # 大乐透单注标准：最后2个为蓝球且<=12
-                if all_nums[-1] <= 12 and all_nums[-2] <= 12:
-                    red_balls.extend([x for x in all_nums[:-2] if x <= 35])
-                    blue_balls.extend(all_nums[-2:])
-                else:
-                    red_balls.extend([x for x in all_nums if x <= 35])
-            elif not is_dlt and len(all_nums) >= 7:
-                # 双色球单注标准：最后1个为蓝球且<=16
-                if all_nums[-1] <= 16:
-                    red_balls.extend([x for x in all_nums[:-1] if x <= 33])
-                    blue_balls.extend([all_nums[-1]])
-                else:
-                    red_balls.extend([x for x in all_nums if x <= 33])
-            else:
-                # 散装号码，默认归入红球
-                if is_dlt:
-                    red_balls.extend([x for x in all_nums if x <= 35])
-                else:
-                    red_balls.extend([x for x in all_nums if x <= 33])
-                    
-    # 终极兜底：如果没有剥离出蓝球，说明文本极度混乱，直接把所有1-35内的数字作为红球样本
-    if not blue_balls:
-        all_matches = re.findall(r'\b(0?[1-9]|[1-2][0-9]|3[0-5])\b', text)
-        red_balls = [int(x) for x in all_matches if (is_dlt and int(x)<=35) or (not is_dlt and int(x)<=33)]
-        
-    return red_balls, blue_balls
 
-# ==========================================
-# 1. 全局页面配置
-# ==========================================
-st.set_page_config(page_title="坦克指挥控制台", page_icon="🚀", layout="wide")
+st.set_page_config(
+    page_title="坦克战略指挥部-高维热力版",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# 注入极客黑钢高精UI皮肤（适配移动端与大屏）
 st.markdown("""
 <style>
-    /* 球体在手机上自适应紧凑排列 */
-    .ball-container { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    /* 全局背景暗黑风 */
+    .stApp {
+        background-color: #0B0F19;
+        color: #E2E8F0;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    
+    /* 强力隐藏 Streamlit 默认的白边和顶部 */
+    [data-testid="stHeader"] {display: none;}
+    .block-container {padding-top: 2rem !important; padding-bottom: 2rem !important;}
+    
+    /* 大标题立体科幻效果 */
+    h1 {
+        text-shadow: 0 0 12px rgba(255, 75, 43, 0.4);
+        font-size: 2.2rem !important;
+    }
+    
+    /* 容器控制台皮肤 */
+    div[data-testid="stVerticalBlock"] > div {
+        background: #111827;
+        border-radius: 12px;
+        padding: 6px;
+        border: 1px solid #1F2937;
+        margin-bottom: 5px;
+    }
+    
+    /* 侧边栏样式重写 */
+    [data-testid="stSidebar"] {
+        background-color: #0d1321 !important;
+        border-right: 1px solid #1F2937;
+    }
+    
+    /* 自定义高能按钮 */
+    .stButton>button {
+        background: linear-gradient(135deg, #FF4B2B 0%, #FF416C 100%);
+        color: white !important;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 6px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        width: 100%;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(255, 75, 43, 0.4);
+    }
+    
+    /* =======================================
+       🔥 核心展示组件：球体、数字矩阵、频次条
+       ======================================= */
+    
+    .ball-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 5px;
+    }
     .ball {
-        width: 34px; height: 34px; border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        font-weight: bold; font-size: 14px; color: white;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 15px;
+        color: white;
+        user-select: none;
         text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
     }
     .ball-red { background: radial-gradient(circle at 10px 10px, #FF4B2B, #B31217); box-shadow: 0 0 6px rgba(255, 75, 43, 0.5); }
     .ball-blue { background: radial-gradient(circle at 10px 10px, #6FB1FC, #0052D4); box-shadow: 0 0 6px rgba(0, 82, 212, 0.5); }
     .ball-yellow { background: radial-gradient(circle at 10px 10px, #FFD700, #F39C12); color: #333; text-shadow: none; box-shadow: 0 0 6px rgba(243, 156, 18, 0.5); }
-    
+
     /* 频次横条在手机和电脑上都能自适应紧凑排列 */
     .freq-tag {
         background-color: #2b2b2b; color: #00E676; padding: 4px 8px;
@@ -127,387 +146,285 @@ st.markdown("""
     }
     .stat-row { display: flex; align-items: center; margin-bottom: 8px; background: #1E1E1E; padding: 8px; border-radius: 8px;}
     .filter-box { background: #1E1E1E; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 12px;}
-    
+
     /* 彻底封死顶部区域 */
     [data-testid="stHeader"], .stApp > header { display: none !important; pointer-events: none !important; height: 0px !important; }
     #MainMenu, footer, .stDeployButton, .stAppDeployButton, [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }
-    
+
     .ratio-badge { background-color: #262626; border: 1px solid #444; padding: 6px 12px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 14px; flex: 1;}
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 🛡️ 1.5 安全认证
-# ==========================================
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
 
-if not st.session_state.authenticated:
-    st.markdown("<h1 style='text-align: center; color: #FF4B2B; margin-top: 100px;'>🚀 坦克战略指挥部</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #888;'>此系统为内部绝密版本，未授权人员请立即退出。</p>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        pwd = st.text_input("🔒 请输入安全访问口令：", type="password")
-        if st.button("验证身份进入系统", use_container_width=True):
-            if pwd == "888888":  
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("❌ 警告：口令错误，访问被拒绝！")
-    st.stop()
+# 页面头部文案
+st.markdown("<h1 style='text-align: center; color: #FF4B2B; margin-top: 10px;'>🚀 坦克战略指挥部</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #888;'>此系统为内部绝密版本，未授权人员请立即退出。</p>", unsafe_allow_html=True)
 
-
-# ==========================================
-# 2. 智能读取历史中枢
-# ==========================================
-def fetch_latest_data(lottery_code, local_latest_issue, custom_limit=50):
-    if f"err_{lottery_code}" in st.session_state:
-        del st.session_state[f"err_{lottery_code}"]
-
-    now_time = time.time()
-    urls = [
-        f"https://datachart.500.com/{lottery_code}/history/newinc/history.php?limit={custom_limit}&_t={int(now_time)}", 
-        f"https://datachart.500.com/{lottery_code}/history/inc/history.php?limit={custom_limit}&_t={int(now_time)}"
-    ]
-    headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
-        "Referer": f"https://datachart.500.com/{lottery_code}/history/history.shtml"
-    }
-    
-    new_rows = []
-    for url in urls:
-        try:
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code != 200: continue
-            res.encoding = 'utf-8'
-            soup = BeautifulSoup(res.text, 'html.parser')
-            trs = soup.find_all('tr', class_=['t_tr1', 't_tr2', 't_tr']) or soup.find_all('tr')
-            
-            for tr in trs:
-                tds = tr.find_all('td')
-                if len(tds) < 8: continue 
-
-                iss_str = re.sub(r'\D', '', tds[0].get_text(strip=True))
-                if len(iss_str) < 3: continue
-                issue_val = int("20" + iss_str[:10]) if len(iss_str) == 5 else int(iss_str[:10])
-                
-                if custom_limit == 50 and issue_val <= local_latest_issue: continue
-                
-                balls = []
-                for td in tds[1:]:
-                    text = td.get_text(strip=True)
-                    if text.isdigit(): balls.append(int(text))
-               
-                date_str = tds[-1].get_text(strip=True)
-                if not re.search(r'\d{4}-\d{2}-\d{2}', date_str):
-                    date_str = time.strftime("%Y-%m-%d", time.localtime())
-                
-                if len(balls) >= 7:
-                    core_balls = balls[:7]
-                    new_rows.append([issue_val, date_str, core_balls[0], core_balls[1], core_balls[2], core_balls[3], core_balls[4], core_balls[5], core_balls[6]])
-            
-            if new_rows: break 
-        except Exception: continue
-
-    if new_rows:
-        cols = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2'] if lottery_code == 'dlt' else ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
-        df_new = pd.DataFrame(new_rows, columns=cols)
-        return df_new.sort_values(by='期号', ascending=False).reset_index(drop=True)
-    return pd.DataFrame()
-
-
-@st.cache_data(ttl=5)
-def load_local_data(lottery_code, uploaded_file=None, target_mode="默认"):
-    df_local = pd.DataFrame()
-    source = uploaded_file if uploaded_file else (f"{lottery_code}.csv" if os.path.exists(f"{lottery_code}.csv") else (f"{lottery_code}.xls" if os.path.exists(f"{lottery_code}.xls") else None))
-    
-    if source:
-        try:
-            if hasattr(source, 'seek'): source.seek(0)
-            if str(source).endswith(('xls','xlsx')):
-                df_raw = pd.read_excel(source, header=None, dtype=str)
-            else:
-                df_raw = pd.read_csv(source, encoding_errors='ignore', header=None, dtype=str)
-                
-            cols_use = [0, 1, 2, 3, 4, 5, 6, 7, 8]
-            c_names = ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '后1', '后2'] if lottery_code == 'dlt' else ['期号', '日期', '前1', '前2', '前3', '前4', '前5', '前6', '后1']
-           
-            df_raw = df_raw.iloc[:, cols_use]
-            df_raw.columns = c_names
-            df_raw['前1'] = pd.to_numeric(df_raw['前1'], errors='coerce')
-            df_raw = df_raw.dropna(subset=['前1'])
-            df_raw['期号'] = df_raw['期号'].astype(str).str.replace(r'\D', '', regex=True)
-            df_raw['期号'] = pd.to_numeric(df_raw['期号'], errors='coerce').fillna(0).astype(int)
-          
-            for c in c_names[2:]: df_raw[c] = pd.to_numeric(df_raw[c], errors='coerce').fillna(0).astype(int)
-            df_local = df_raw[(df_raw['前1']>0)&(df_raw['前1']<=35)].sort_values(by='期号', ascending=False).reset_index(drop=True)
-        except Exception: pass
+# -------------------------
+# 数据层功能
+# -------------------------
+@st.cache_data(ttl=600)  # 缓存10分钟，避免高频请求导致被502封禁
+def fetch_lottery_data(game_type="ssq", limit=100):
+    """从公共接口拉取最新的双色球或大乐透历史开奖数据(带防缓存机制)"""
+    timestamp = int(time.time())
+    if game_type == "ssq":
+        url = f"https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=85&provinceId=0&pageSize={limit}&pageNo=1&_={timestamp}"
+    else:
+        url = f"https://webapi.sporttery.cn/gateway/lottery/getHistoryPageListV1.qry?gameNo=85&provinceId=0&pageSize={limit}&pageNo=1&_={timestamp}"
         
-    local_latest = int(df_local.iloc[0]['期号']) if not df_local.empty else 0
-    
-    if target_mode == "历史同期对比" and df_local.empty:
-        df_new = fetch_latest_data(lottery_code, local_latest, custom_limit=3000)
-    else:
-        df_new = fetch_latest_data(lottery_code, local_latest, custom_limit=100)
-    
-    new_count = len(df_new)
-    if not df_new.empty:
-        df_final = pd.concat([df_new, df_local], ignore_index=True)
-    else:
-        df_final = df_local
+    try:
+        # 伪造全套高级浏览器请求头防止反爬劫持
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Referer": "https://www.sporttery.cn/"
+        }
+        res = requests.get(url, headers=headers, timeout=8)
+        if res.status_code == 200:
+            data = res.json()
+            list_data = data.get("value", {}).get("list", [])
+            parsed_rows = []
+            for item in list_data:
+                term = item.get("lotteryDrawNum", "")
+                result_str = item.get("lotteryDrawResult", "")
+                if term and result_str:
+                    all_balls = result_str.split(" ")
+                    if len(all_balls) >= 7:
+                        if game_type == "dlt":
+                            front = all_balls[:5]
+                            back = all_balls[5:7]
+                        else:
+                            # 模拟兼容双色球格式转换
+                            front = all_balls[:6]
+                            back = all_balls[6:7]
+                        parsed_rows.append([term] + front + back)
+            if parsed_rows:
+                return pd.DataFrame(parsed_rows)
+    except Exception:
+        pass
         
-    if not df_final.empty:
-        df_final = df_final.drop_duplicates(subset=['期号'], keep='first') 
-        df_final = df_final.sort_values(by='期号', ascending=False).reset_index(drop=True)
-        df_final['日期_解析'] = pd.to_datetime(df_final['日期'], errors='coerce')
-        df_final['星期'] = df_final['日期_解析'].dt.dayofweek
-      
-    return df_final, new_count
+    # 备用方案：若官方网网络断开，尝试备用爬虫引擎抓取50彩票网
+    try:
+        url_back = f"http://kaijiang.500.com/shtml/{game_type}/20000.shtml?_={timestamp}"
+        res_back = requests.get(url_back, timeout=5)
+        res_back.encoding = "gb2312"
+        soup = BeautifulSoup(res_back.text, "html.parser")
+        
+        # 针对 500彩票网的特殊解析，需要过滤掉多余的日期等字符
+        tr_list = soup.find_all("tr")
+        parsed_rows = []
+        for tr in tr_list:
+            tds = tr.find_all("td")
+            if len(tds) >= 8:
+                txt = tds[0].text.strip()
+                # 判断这行是否是合法的期号（纯数字）
+                if txt.isdigit() and len(txt) >= 5:
+                    # 尝试从这行中提取所有球号（要求也是纯数字）
+                    balls = []
+                    for td in tds[1:]:
+                        b_txt = td.text.strip()
+                        if b_txt.isdigit() and len(b_txt) <= 2:
+                             balls.append(b_txt)
+                        # 防止把奖金等后面的大数字也加进来，最多取7个
+                        if len(balls) == 7:
+                            break
+                    if len(balls) == 7:
+                        parsed_rows.append([txt] + balls)
+        if parsed_rows:
+            return pd.DataFrame(parsed_rows)
+    except Exception:
+        pass
+        
+    return None
 
-def calculate_frequencies(df, is_dlt=True):
-    if is_dlt:
-        front_nums, back_nums = df[['前1', '前2', '前3', '前4', '前5']].values.flatten(), df[['后1', '后2']].values.flatten()
-        front_max, back_max = 35, 12
-    else:
-        front_nums, back_nums = df[['前1', '前2', '前3', '前4', '前5', '前6']].values.flatten(), df[['后1']].values.flatten()
-        front_max, back_max = 33, 16
-    front_counts, back_counts = Counter(front_nums), Counter(back_nums)
-    for i in range(1, front_max + 1): front_counts.setdefault(i, 0)
-    for i in range(1, back_max + 1): back_counts.setdefault(i, 0)
-    return front_counts, back_counts
+def clean_excel_data(df, is_dlt=False):
+    """
+    全自动数据清洗引擎：
+    不看行头，不要列名，自动锁定包含开奖号码的核心区域！
+    兼容任何用户的杂乱表格。
+    """
+    valid_rows = []
+    # 强制将所有数据转为字符串以便正则匹配
+    df = df.astype(str)
+    
+    required_len = 7 if is_dlt else 7  # 都是前区+后区共7个球
+    front_max = 35 if is_dlt else 33
+    back_max = 12 if is_dlt else 16
+    front_count = 5 if is_dlt else 6
+    back_count = 2 if is_dlt else 1
 
-def calculate_bets(n, r): return math.comb(n, r) if r <= n and r >= 0 else 0
+    for idx, row in df.iterrows():
+        nums = []
+        for cell in row:
+            # 删掉所有非数字字符（比如空格、汉字、小数点）
+            cleaned = re.sub(r'\D', '', cell)  
+            
+            # 过滤掉像“期号”这种特别长的数字，还有日期等
+            # 开奖号码通常是 1-2 位数字
+            if cleaned and len(cleaned) <= 2:
+                try:
+                    val = int(cleaned)
+                    nums.append(val)
+                except:
+                    pass
+        
+        # 检查这行是不是包含了一整期的数据（至少要包含7个球）
+        if len(nums) >= required_len:
+            # 取这行的最后 required_len 个数字作为当期开奖号
+            potential_balls = nums[-required_len:]
+            front_part = potential_balls[:front_count]
+            back_part = potential_balls[front_count:]
+            
+            # 校验数字范围是否完全合规
+            if all(1 <= x <= front_max for x in front_part) and all(1 <= x <= back_max for x in back_part):
+                # 校验前区是否包含重复数字（正常开奖不可能重复）
+                if len(set(front_part)) == front_count:
+                    # 格式化存入
+                    valid_rows.append([str(x).zfill(2) for x in potential_balls])
+                    
+    if len(valid_rows) == 0:
+        return None
+        
+    # 转换回DataFrame格式给后续使用
+    return pd.DataFrame(valid_rows)
 
-def scan_advanced_patterns(df_slice, df_full, is_dlt):
-    front_cols = ['前1', '前2', '前3', '前4', '前5'] if is_dlt else ['前1', '前2', '前3', '前4', '前5', '前6']
-    repeat_count = 0
-    consecutive_count = 0
-    for idx, row in df_slice.iterrows():
-        nums = sorted([row[c] for c in front_cols])
-        if any(nums[i+1] - nums[i] == 1 for i in range(len(nums)-1)): consecutive_count += 1
-        full_idx = df_full.index[df_full['期号'] == row['期号']].tolist()
-        if full_idx and full_idx[0] + 1 < len(df_full):
-            prev_nums = set([df_full.iloc[full_idx[0] + 1][c] for c in front_cols])
-            if len(set(nums).intersection(prev_nums)) > 0: repeat_count += 1
-    return repeat_count, consecutive_count
 
 # ==========================================
-# 4. 侧边栏
+# 2. 战术分析核心算法层
+# ==========================================
+
+def calculate_bets(n, r):
+    """快速计算组合数 (nCr)"""
+    if r > n or r < 0: return 0
+    return math.comb(n, r)
+
+def parse_ocr_text_to_numbers(words_list, is_dlt=False):
+    """
+    智能AI大脑解析：
+    从百度OCR识别出的散乱字符串列表中，提取出符合彩种范围的干净数字。
+    """
+    all_nums = []
+    for word in words_list:
+        # 使用正则把所有连续数字提取出来
+        found = re.findall(r'\d+', word)
+        for num_str in found:
+            val = int(num_str)
+            # 过滤掉非常离谱的大数字（如日期、期号）
+            if 1 <= val <= 35:
+                all_nums.append(val)
+                
+    # 去重并排序
+    valid_nums = sorted(list(set(all_nums)))
+    max_front = 35 if is_dlt else 33
+    
+    # 按照彩种强行分割为前后区数字
+    front_balls = [x for x in valid_nums if 1 <= x <= max_front]
+    back_balls = [x for x in valid_nums if 1 <= x <= (12 if is_dlt else 16)]
+    
+    return front_balls, back_balls
+
+def render_balls(counts_dict, ball_class):
+    """生成带有频次分层的高亮HTML排版 (支持暗黑风)"""
+    if not counts_dict:
+        return "<p style='color:#666;'>暂无分析数据</p>"
+        
+    # 按出现频次从大到小倒序排列
+    sorted_items = sorted(counts_dict.items(), key=lambda x: x[1], reverse=True)
+    
+    # 将相同频次的球归类到一起展示
+    grouped = {}
+    for num, freq in sorted_items:
+        if freq not in grouped:
+            grouped[freq] = []
+        grouped[freq].append(num)
+        
+    html_str = ""
+    for freq, nums in grouped.items():
+        nums_sorted = sorted(nums)
+        balls_html = "".join([f"<div class='ball {ball_class}'>{str(x).zfill(2)}</div>" for x in nums_sorted])
+        html_str += f"<div class='stat-row'><div class='freq-tag'>{freq} 次</div><div class='ball-container' style='margin-bottom:0;'>{balls_html}</div></div>"
+    return html_str
+
+# ==========================================
+# 3. 侧边栏与数据初始化
 # ==========================================
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/dashboard-layout.png", width=60)
-    st.title("控制台设置")
+    st.markdown("### 🛠️ 战略基本配置")
+    game_mode = st.radio("📡 选择当前推演彩种", ["超级大乐透 🟢", "双色球 🔴"])
+    is_dlt = "超级大乐透" in game_mode
     
-    if st.button("🔄 解除冷却：强制连网冲刷", use_container_width=True):
-        load_local_data.clear() 
-        st.rerun() 
-
     st.markdown("---")
-    st.markdown("### 🗄️ 数据库管理 (Admin)")
-    uploaded_file = st.file_uploader("临时投喂本地开奖文件", type=['csv', 'xls', 'xlsx'])
-
-# ==========================================
-# 5. 主画面开奖数据分析区
-# ==========================================
-st.header("🚀 坦克战略指挥中控雷达")
-
-top_col1, top_col2 = st.columns(2)
-with top_col1:
-    lottery_type = st.selectbox("🎯 切换开奖频道", ["双色球 (SSQ)", "大乐透 (DLT)"], index=1)
-with top_col2:
-    period_limit = st.selectbox("📅 战术期数锁定", [5, 10, 29, 30, 50, 100], index=3)
-
-is_dlt = "DLT" in lottery_type
-lottery_code = 'dlt' if is_dlt else 'ssq'
-req_f, req_b = (5, 2) if is_dlt else (6, 1)
-max_f, max_b = (35, 12) if is_dlt else (33, 16)
-
-if "filter_mode_state" not in st.session_state:
-    st.session_state.filter_mode_state = "历史同期对比"
-
-with st.spinner("📡 正在连线云端检测最新开奖数据..."):
-    df_base, new_count = load_local_data(lottery_code, uploaded_file, target_mode=st.session_state.filter_mode_state)
-
-if not df_base.empty:
-    latest_issue = str(df_base.iloc[0]['期号'])
+    data_source_mode = st.radio("📥 数据载入渠道", ["本地Excel文件投喂 (推荐)", "智能网络自动拉取"])
     
-    if new_count > 0:
-        st.success(f"⚡ 自动抓取成功：已自动补齐最新的 **{new_count}** 期数据！当前最新: 第 **{latest_issue}** 期。")
-    else:
-        st.info(f"🟢 当前数据库最新状态：最新期号 第 **{latest_issue}** 期。")
-        
-    st.markdown("### 📡 开启高级过滤雷达")
-    
-    filter_mode = st.radio("选择分析维度", ["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"], index=["默认 (近期连贯走势)", "历史同期对比", "星期独立走势"].index(st.session_state.filter_mode_state))
-    if filter_mode != st.session_state.filter_mode_state:
-        st.session_state.filter_mode_state = filter_mode
-        st.rerun()
-    
-    if filter_mode == "历史同期对比":
-        if '期' in latest_issue:
-            current_period_str = latest_issue.split('期')[0][-3:]
+    source = None
+    if "本地Excel文件" in data_source_mode:
+        uploaded_file = st.file_uploader("临时投喂本地开奖文件", type=['csv', 'xls', 'xlsx'])
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    source = pd.read_csv(uploaded_file, header=None, dtype=str)
+                else:
+                    source = pd.read_excel(uploaded_file, header=None, dtype=str)
+                st.success("🎯 战术开奖包投喂成功！")
+            except Exception as e:
+                st.error(f"❌ 载入失败，请检查文件: {e}")
         else:
-            current_period_str = latest_issue[-3:]
+            # 为了防止初次进入报错，默认提供占位提示
+            st.info("👈 请在上方选择本地号码记录表")
             
-        default_target_period = int(current_period_str) + 1
-        target_period_int = st.number_input("🎯 请确认预测目标期号 (自动 +1 期)：", min_value=1, max_value=160, value=default_target_period, step=1)
-        target_period_str = f"{target_period_int:03d}"
-        st.info(f"📅 **已锁定预测同期**：为您深度调取历年来尾号为 **{target_period_str}** 的所有往期数据！")
-        df_filtered = df_base[df_base['期号'].astype(str).str.endswith(target_period_str)]
-    elif filter_mode == "星期独立走势":
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            week_target = st.selectbox("选择开奖日", ["周一", "周三", "周六"] if is_dlt else ["周二", "周四", "周日"])
-            week_map = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周六": 5, "周日": 6}
-        df_filtered = df_base[df_base['星期'] == week_map[week_target]]
-        st.info(f"📆 **已开启星期独立走势**：挖掘 **{week_target}** 的特有规律。")
     else:
-        df_filtered = df_base
-
-    df = df_filtered.head(period_limit)
-    actual_periods = len(df)
-    
-    with st.expander(f"🟢 数据加载成功！共捕获 {actual_periods} 期精准数据 (展开查看明细)"):
-        st.dataframe(df.astype(str), use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("🕵️‍♂️ 形态深度扫描引擎")
-    if actual_periods > 0:
-        repeat_num, cons_num = scan_advanced_patterns(df, df_base, is_dlt)
-        rc1, rc2 = st.columns(2)
-        rc1.warning(f"🔁 **前区重号规律**：在这 {actual_periods} 期中，有 **{repeat_num}** 期开出了上一期的落号。(发生概率: **{repeat_num/actual_periods*100:.1f}%**)")
-        rc2.error(f"🔗 **前区连号规律**：在这 {actual_periods} 期中，有 **{cons_num}** 期出现了连号组合。(发生概率: **{cons_num/actual_periods*100:.1f}%**)")
-    else:
-        st.warning("⚠️ 暂无足够的数据周期进行形态扫描。")
-
-    st.markdown("---")
-    st.subheader("🧬 核心出现频次矩阵")
-    front_counts, back_counts = calculate_frequencies(df, is_dlt)
-    front_color_class, back_color_class = ("ball-blue", "ball-yellow") if is_dlt else ("ball-red", "ball-blue")
-
-    col1, col2 = st.columns(2)
-    def render_balls(counts_dict, ball_class):
-        freq_group = {}
-        for num, freq in counts_dict.items(): freq_group.setdefault(freq, []).append(num)
-        html_str = ""
-        for freq in sorted(freq_group.keys(), reverse=True):
-            nums_sorted = sorted(freq_group[freq])
-            balls_html = "".join([f"<div class='ball {ball_class}'>{str(n).zfill(2)}</div>" for n in nums_sorted])
-            html_str += f"<div class='stat-row'><div class='freq-tag'>{freq} 次</div><div class='ball-container' style='margin-bottom:0;'>{balls_html}</div></div>"
-        return html_str
-
-    with col1:
-        st.markdown(f"### {'🔵' if is_dlt else '🔴'} 前区 (1-{max_f})")
-        st.markdown(render_balls(front_counts, front_color_class), unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"### {'🟡' if is_dlt else '🔵'} 后区 (1-{max_b})")
-        st.markdown(render_balls(back_counts, back_color_class), unsafe_allow_html=True)
-
-    st.markdown("---")
-    
-    st.subheader("⚙️ 012路高阶智能化智能缩水控制台面板")
-    f_0 = [x for x in range(1, max_f + 1) if x % 3 == 0]
-    f_1 = [x for x in range(1, max_f + 1) if x % 3 == 1]
-    f_2 = [x for x in range(1, max_f + 1) if x % 3 == 2]
-    b_0 = [x for x in range(1, max_b + 1) if x % 3 == 0]
-    b_1 = [x for x in range(1, max_b + 1) if x % 3 == 1]
-    b_2 = [x for x in range(1, max_b + 1) if x % 3 == 2]
-
-    st.markdown('<div class="filter-box">', unsafe_allow_html=True)
-    def_f0, def_f1, def_f2 = (1, 3, 1) if is_dlt else (2, 2, 2)
-    def_b0, def_b1, def_b2 = (1, 1, 0) if is_dlt else (0, 1, 0)
-    
-    st.markdown(f"#### {'🔵' if is_dlt else '🔴'} 前区 012路数量配比调节器")
-    sc1, sc2, sc3 = st.columns(3)
-    with sc1: f_req_0 = st.number_input("0路出号", min_value=0, max_value=req_f, value=def_f0, step=1, key="num_f0")
-    with sc2: f_req_1 = st.number_input("1路出号", min_value=0, max_value=req_f, value=def_f1, step=1, key="num_f1")
-    with sc3: f_req_2 = st.number_input("2路出号", min_value=0, max_value=req_f, value=def_f2, step=1, key="num_f2")
-    
-    st.markdown(f"#### {'🟡' if is_dlt else '🔵'} 后区 012路数量配比调节器")
-    sbc1, sbc2, sbc3 = st.columns(3)
-    with sbc1: b_req_0 = st.number_input("0路出号", min_value=0, max_value=req_b, value=def_b0, step=1, key="num_b0")
-    with sbc2: b_req_1 = st.number_input("1路出号", min_value=0, max_value=req_b, value=def_b1, step=1, key="num_b1")
-    with sbc3: b_req_2 = st.number_input("2路出号", min_value=0, max_value=req_b, value=def_b2, step=1, key="num_b2")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    sum_f = f_req_0 + f_req_1 + f_req_2
-    sum_b = b_req_0 + b_req_1 + b_req_2
-
-    if sum_f != req_f or sum_b != req_b:
-        st.error("⚠️ **校验失败**：请确保前区和后区的012路设定总数正确！")
-    else:
-        total_filtered_bets = calculate_bets(len(f_0), f_req_0) * calculate_bets(len(f_1), f_req_1) * calculate_bets(len(f_2), f_req_2) * calculate_bets(len(b_0), b_req_0) * calculate_bets(len(b_1), b_req_1) * calculate_bets(len(b_2), b_req_2)
-        st.success(f"🔥 形态验证成功：当前配置形态理论极限组合总数为 **{total_filtered_bets}** 注！需投入 **{total_filtered_bets * 2}** 元。")
-else:
-    st.warning("⚠️ **脱机金库暂无数据！** 请上传 xls/csv。")
+        # 网络爬虫模式
+        with st.spinner("正在呼叫总台爬取最新数据..."):
+            limit = st.slider("抓取期数", min_value=10, max_value=200, value=50, step=10)
+            source = fetch_lottery_data("dlt" if is_dlt else "ssq", limit=limit)
+        if source is not None:
+            st.success(f"📡 成功对接云端最新 {len(source)} 期数据！")
+        else:
+            st.error("⚠️ 云端网络阻塞或反爬被拦截，请尝试刷新或改用本地文件投喂！")
 
 
 # ==========================================
-# 6. 🪓 炮灰晒票反杀引擎 (AI 视觉一键全自动版)
+# 4. 主面板展示核心层
 # ==========================================
-st.markdown("---")
-st.header("🪓 炮灰晒票反杀引擎 (红蓝全统计+核心胆拖最少组合版)")
-st.info("💡 **实战操作指南**：批量上传晒票截图或直接粘贴文本，系统将调用【百度AI视觉大脑】全自动抠出所有红蓝球号码，并推演出欧克老哥要求的【精选最省钱胆拖全托方案】！")
-
-# AI传图核心区
-uploaded_images = st.file_uploader("🖼️ 点此批量上传晒票截图（支持一次选中多张照片）", type=['png', 'jpg', 'jpeg', 'webp'], accept_multiple_files=True)
-
-# 备用文本框
-raw_text = st.text_area("📋 [备用防线] 如果有不想传图的，也可以在这里直接粘贴文本：", height=100, placeholder="一般情况无需填写，把图片传到上面，全交由 AI 扫描即可。格式如：01 02 03 04 05 + 06 07")
-
-if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告", use_container_width=True):
-    combined_text = raw_text
+if source is not None:
+    # 激活全自动清洗引擎
+    cleaned_df = clean_excel_data(source, is_dlt=is_dlt)
     
-    # 1. 触发百度 AI 进行图像识别
-    if uploaded_images:
-        with st.spinner(f"🤖 百度AI视觉大脑启动！正在穿透提取 {len(uploaded_images)} 张图片中的红蓝区隐藏数字..."):
-            token = get_baidu_token(BAIDU_API_KEY, BAIDU_SECRET_KEY)
-            if token:
-                for img in uploaded_images:
-                    img_bytes = img.read()
-                    text = baidu_ocr(img_bytes, token)
-                    combined_text += " " + text
+    if cleaned_df is None:
+        st.error("🚨 战略库解析失败！上传的文件内找不到连续7个数字的合规开奖记录，请检查文件。")
+    else:
+        # 分离前后区并进行数据统计
+        f_len = 5 if is_dlt else 6
+        df_front = cleaned_df.iloc[:, :f_len]
+        df_back = cleaned_df.iloc[:, f_len:7]
+        
+        # 将表格数据压平为列表
+        list_front = [int(x) for x in df_front.values.flatten().tolist()]
+        list_back = [int(x) for x in df_back.values.flatten().tolist()]
+        
+        # 统计频次
+        counts_red = dict(Counter(list_front))
+        counts_blue = dict(Counter(list_back))
+        
+        # 计算总体大样本排序
+        sorted_red = sorted(counts_red.items(), key=lambda x: x[1], reverse=True)
+        sorted_blue = sorted(counts_blue.items(), key=lambda x: x[1], reverse=True)
+        
+        
+        # -------------------------
+        # 大盘核心：多维热力矩阵选号盘
+        # -------------------------
+        st.markdown("### 📊 大众玩家多维热力热度选号矩阵")
+        
+        # 动态计算热力颜色函数
+        def get_heat_color(ball_num, count_dict, is_blue_ball=False):
+            freq = count_dict.get(ball_num, 0)
+            if freq == 0:
+                return "#1e293b" # 盲区冷号（高级深灰）
             else:
-                st.error("🚨 AI 接口连线失败！请检查百度的 API_KEY 和 SECRET_KEY 是否正确配置。")
-    
-    if not combined_text.strip():
-        st.warning("⚠️ 弹药库为空！请上传图片或粘贴数字！")
-    else:
-        # 2. 调用红蓝球智能清洗分离算法
-        red_nums, blue_nums = parse_red_blue_from_text(combined_text, is_dlt)
-        
-        if not red_nums:
-            st.error("❌ 未检测到有效的号码，请检查图片是否清晰或文本是否正确！")
-        else:
-            # ================= 提取明细核对面板 =================
-            with st.expander(f"👀 AI 视觉成功提取了 {len(red_nums)} 个红球, {len(blue_nums)} 个蓝球样本，点击核对抓取明细", expanded=True):
-                st.markdown("**🔴 成功抠出的红球样本：**")
-                st.code(" ".join([str(x).zfill(2) for x in red_nums]))
-                if blue_nums:
-                    st.markdown("**🔵 成功抠出的蓝球样本：**")
-                    st.code(" ".join([str(x).zfill(2) for x in blue_nums]))
-            
-            # 统计红蓝球频次（响应欧克用户的最新需求）
-            counts_red = Counter(red_nums)
-            counts_blue = Counter(blue_nums)
-            
-            sorted_red = counts_red.most_common()
-            sorted_blue = counts_blue.most_common()
-            
-            # ================= 完美升级：多维矩阵热力反杀选号盘 =================
-            st.markdown("### 📊 晒票所有号码多维热力反杀盘")
-            st.info("💡 **热力图说明**：号码按选号盘整齐平铺。🔥 颜色越红（深红/鲜红）代表大众资金撞车越严重，属于**绝对炮灰区**；❄️ 蓝色或深灰代表资金真空盲区，极易爆冷，属于**黄金潜伏区**！")
-
-            # 准备颜色映射辅助函数
-            def get_heat_color(num, counts_dict, is_blue_ball=False):
-                freq = counts_dict.get(num, 0)
-                if freq == 0:
-                    return "#1e293b" # 没出现过，冷色调暗夜底色
-                
-                max_freq = max(counts_dict.values()) if counts_dict else 1
-                if max_freq == 0: max_freq = 1
+                max_freq = max(count_dict.values()) if count_dict else 1
                 ratio = freq / max_freq
-                
                 if not is_blue_ball:
                     # 红球热力：根据占比从浅橘红到深血红
                     if ratio > 0.7: return "#B31217" # 爆热（深血红）
@@ -519,135 +436,205 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
                     elif ratio > 0.4: return "#0052D4" # 炽热蓝
                     else: return "#64B5F6" # 温热蓝
 
-            tc1, tc2 = st.columns(2)
-            with tc1:
-                st.markdown("#### 🔴 前区红球大众热力选号矩阵")
-                max_red_num = 35 if is_dlt else 33
-                html_red_matrix = "<div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; max-width: 450px;'>"
-                for i in range(1, max_red_num + 1):
-                    freq = counts_red.get(i, 0)
-                    bg_color = get_heat_color(i, counts_red, is_blue_ball=False)
-                    border_style = "border: 2px solid #FF4B2B;" if freq > 0 else "border: 1px solid #475569;"
-                    html_red_matrix += f"""
-                    <div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'>
-                        <b style='font-size:15px;'>{str(i).zfill(2)}</b><br>
-                        <span style='font-size:11px; opacity:0.85;'>{freq}次</span>
-                    </div>
-                    """
-                html_red_matrix += "</div>"
-                st.markdown(html_red_matrix, unsafe_allow_html=True)
-                
-            with tc2:
-                st.markdown("#### 🔵 后区蓝球大众热力选号矩阵")
-                max_blue_num = 12 if is_dlt else 16
-                html_blue_matrix = "<div style='display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-width: 450px;'>"
-                for i in range(1, max_blue_num + 1):
-                    freq = counts_blue.get(i, 0)
-                    bg_color = get_heat_color(i, counts_blue, is_blue_ball=True)
-                    border_style = "border: 2px solid #0052D4;" if freq > 0 else "border: 1px solid #475569;"
-                    html_blue_matrix += f"""
-                    <div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'>
-                        <b style='font-size:15px;'>{str(i).zfill(2)}</b><br>
-                        <span style='font-size:11px; opacity:0.85;'>{freq}次</span>
-                    </div>
-                    """
-                html_blue_matrix += "</div>"
-                st.markdown(html_blue_matrix, unsafe_allow_html=True)
+        tc1, tc2 = st.columns(2)
+        with tc1:
+            st.markdown("#### 🔴 前区红球大众热力选号矩阵")
+            max_red_num = 35 if is_dlt else 33
+            html_red_matrix = "<div style='display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; max-width: 450px;'>"
+            for i in range(1, max_red_num + 1):
+                freq = counts_red.get(i, 0)
+                bg_color = get_heat_color(i, counts_red, is_blue_ball=False)
+                border_style = "border: 2px solid #FF4B2B;" if freq > 0 else "border: 1px solid #475569;"
+                html_red_matrix += f"<div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'><b style='font-size:15px;'>{str(i).zfill(2)}</b><br><span style='font-size:11px; opacity:0.85;'>{freq}次</span></div>"
+            html_red_matrix += "</div>"
+            st.markdown(html_red_matrix, unsafe_allow_html=True)
             
-            # 划定红球炮灰区
-            hot_nums = [x[0] for x in sorted_red[:6]]
-            
-            # 划定红球潜伏区
-            max_n = max_f if 'max_f' in locals() else (35 if is_dlt else 33)
-            all_possible = set(range(1, max_n + 1))
-            appeared_nums = set(red_nums)
-            cold_nums = list(all_possible - appeared_nums) 
-            low_freq_nums = [x[0] for x in sorted_red if x[1] == 1]
-            potential_nums = sorted(list(set(cold_nums + low_freq_nums)))
-            
-            # 执行左右偏移法
-            offset_recommend = set()
-            for h in hot_nums:
-                for offset in [-2, -1, 1, 2]:
-                    target = h + offset
-                    if 1 <= target <= max_n and target not in hot_nums:
-                        offset_recommend.add(target)
-            offset_recommend = sorted(list(offset_recommend))
-            
-            # ================= 输出华丽的分析报告 =================
-            st.markdown("---")
-            st.markdown("### 🪓 大众资金盲区反杀实战报告")
-            
-            rc1, rc2 = st.columns(2)
-            with rc1:
-                st.markdown("<div class='filter-box' style='border-color:#FF4B2B;'>", unsafe_allow_html=True)
-                st.markdown("#### ☠️ 绝对炮灰榜 (诱饵号)")
-                st.markdown("这些是被大众资金疯狂推崇的超级大热号，**建议直接作为死号拉黑，绝不碰！**")
-                hot_str = " ".join([f"<span class='ball ball-red' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</span>" for x in hot_nums])
-                st.markdown(hot_str, unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-            with rc2:
-                st.markdown("<div class='filter-box' style='border-color:#00E676;'>", unsafe_allow_html=True)
-                st.markdown("#### 💎 黄金潜伏区 (盲区号)")
-                st.markdown("大众晒票完美避开的冷区！这些几乎没人买，**极易爆出大冷门，建议从中挑胆！**")
-                pot_str = " ".join([f"<span class='ball ball-blue' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</span>" for x in potential_nums[:15]])
-                st.markdown(pot_str + ("..." if len(potential_nums)>15 else ""), unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-            st.markdown("#### 🎯 左右偏移突击阵地")
-            st.info("💡 **战术逻辑**：系统已自动规避上方的【炮灰号】，并在其左右 1~2 个身位进行火力覆盖。直接从以下红球阵地挑号组单！")
-            offset_str = " ".join([f"<span class='ball ball-yellow' style='display:inline-flex;margin:4px;'>{str(x).zfill(2)}</span>" for x in offset_recommend])
-            st.markdown(f"<div style='background:#2b2b2b; padding:15px; border-radius:10px; text-align:center;'>{offset_str}</div>", unsafe_allow_html=True)
-            
-            # ================= 新增：🎯 核心胆拖全托最省方案推演（欧克老哥点名定制） =================
-            st.markdown("---")
-            st.markdown("### 🏆 核心战术胆拖方案推演（最省组合全托列出）")
-            
-            dan_source = potential_nums if potential_nums else offset_recommend
-            
-            if is_dlt:
-                # 大乐透：四胆全托 与 三胆全托 单独列出
-                d4_nums = (dan_source + [1, 2, 3, 4])[:4]
-                d3_nums = (dan_source + [1, 2, 3])[:3]
-                d4_str = " ".join([str(x).zfill(2) for x in d4_nums])
-                d3_str = " ".join([str(x).zfill(2) for x in d3_nums])
-                
-                # 方案一：4胆全托
-                st.markdown("<div class='filter-box' style='border-color:#FFD700; background:#1b1b10;'>", unsafe_allow_html=True)
-                st.markdown("#### 🌟 【方案一】大乐透 · 四胆全托红球组合（极限最少组合）")
-                st.markdown(f"* **🎯 建议红球胆码**：<span style='color:#FFD700; font-weight:bold;'>{d4_str}</span> （系统优先从盲区冷号精选4个）", unsafe_allow_html=True)
-                st.markdown(f"* **🚜 红球拖码**：包揽其余所有 **{35 - 4}** 个红球（全托）")
-                st.markdown(f"* **📊 红球组合注数**：仅需 **31 注** 红球组合！")
-                st.markdown("* **💰 战术实战预算**：")
-                st.markdown("  1. **后区精选组合**：若锁定后区2个心水蓝球 → **仅需 31 注 (62元)** —— *反杀最省钱方案！*")
-                st.markdown("  2. **后区全托组合**：若后区12个蓝球也全包(66注) → **需 2,046 注 (4,092元)**")
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-                # 方案二：3胆全托
-                st.markdown("<div class='filter-box' style='border-color:#FFD700; background:#101b1b;'>", unsafe_allow_html=True)
-                st.markdown("#### 🌟 【方案二】大乐透 · 三胆全托红球组合（稳健捕获组合）")
-                st.markdown(f"* **🎯 建议红球胆码**：<span style='color:#FFD700; font-weight:bold;'>{d3_str}</span> （系统优先从盲区冷号精选3个）", unsafe_allow_html=True)
-                st.markdown(f"* **🚜 红球拖码**：包揽其余所有 **{35 - 3}** 个红球（全托）")
-                st.markdown(f"* **📊 红球组合注数**：固定为 **496 注** 红球组合")
-                st.markdown("* **💰 战术实战预算**：")
-                st.markdown("  1. **后区精选组合**：若锁定后区2个心水蓝球 → **共 496 注 (992元)**")
-                st.markdown("  2. **后区全托组合**：若后区12个蓝球也全包(66注) → **共 32,736 注 (65,472元)**")
-                st.markdown("</div>", unsafe_allow_html=True)
-                
+        with tc2:
+            st.markdown("#### 🔵 后区蓝球大众热力选号矩阵")
+            max_blue_num = 12 if is_dlt else 16
+            html_blue_matrix = "<div style='display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-width: 450px;'>"
+            for i in range(1, max_blue_num + 1):
+                freq = counts_blue.get(i, 0)
+                bg_color = get_heat_color(i, counts_blue, is_blue_ball=True)
+                border_style = "border: 2px solid #0052D4;" if freq > 0 else "border: 1px solid #475569;"
+                html_blue_matrix += f"<div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'><b style='font-size:15px;'>{str(i).zfill(2)}</b><br><span style='font-size:11px; opacity:0.85;'>{freq}次</span></div>"
+            html_blue_matrix += "</div>"
+            st.markdown(html_blue_matrix, unsafe_allow_html=True)
+
+        # -------------------------
+        # AI 视觉大脑辅助输入模块 (OCR)
+        # -------------------------
+        st.markdown("---")
+        st.markdown("### 👁️ AI 视觉大脑辅助输入（可选项）")
+        st.info("💡 如果你有灵感号码，或者手里有现成红球的截图，可以直接上传！系统将自动提取里面的数字注入冷号盲区进行优先组合！")
+        
+        ocr_image = st.file_uploader("📸 拍照或选择灵感号码图片（支持截图、手写等）", type=['png', 'jpg', 'jpeg'])
+        ocr_front_balls, ocr_back_balls = [], []
+        
+        if ocr_image is not None:
+            with st.spinner("🧠 正在调用百度AI视觉大脑进行高精准文字识别..."):
+                img_bytes = ocr_image.read()
+                token = get_baidu_token(BAIDU_API_KEY, BAIDU_SECRET_KEY)
+                if token:
+                    words = baidu_ocr(img_bytes, token)
+                    if words:
+                        ocr_front_balls, ocr_back_balls = parse_ocr_text_to_numbers(words, is_dlt=is_dlt)
+                        if ocr_front_balls:
+                            st.success(f"🎯 AI 视觉大脑识别成功！提取到灵感红球: {ocr_front_balls}")
+                        else:
+                            st.warning("⚠️ 提取成功但未在图片里识别出符合范围的数字，请确保图片字迹清晰。")
+                    else:
+                        st.error("❌ 未从图片中识别到清晰文字。")
+                else:
+                    st.error("❌ 百度 AI 鉴权令牌获取失败，请检查网络或 API Key 是否正确。")
+                    
+
+        # 划定红球炮灰区 (取热度最高的前6个)
+        hot_nums = [x[0] for x in sorted_red[:6]]
+
+        # 划定红球潜伏区 (频次为0的球)
+        all_possible_reds = list(range(1, 36 if is_dlt else 34))
+        potential_nums = [x for x in all_possible_reds if counts_red.get(x, 0) == 0]
+
+        # 注入 AI 识别到的灵感球进入潜伏优先队列
+        if ocr_front_balls:
+            potential_nums = list(set(ocr_front_balls + potential_nums))
+
+        st.markdown("---")
+        st.markdown("### 🎛️ 坦克三段式热力动态过滤罗盘")
+
+        # 将动态合并的数据池传入过滤面板
+        dan_source = [x for x in potential_nums if x not in hot_nums]
+        if len(dan_source) < 5:
+            # 如果极端情况下冷号不足，拿温热号来补，优先拿较冷的
+            all_remaining = [x[0] for x in sorted_red[::-1] if x[0] not in hot_nums]
+            dan_source = list(set(dan_source + all_remaining))
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### 🔥 大热炮灰区（强烈拦截、严禁选作胆码）")
+            st.markdown("<div class='filter-box' style='border-color:#FF4B2B;'>", unsafe_allow_html=True)
+            hot_str = " ".join([f"<span class='ball ball-red' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</span>" for x in hot_nums])
+            st.markdown(hot_str, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with c2:
+            st.markdown("#### 🍀 盲区潜伏区（主力选号池、冷门突袭）")
+            st.markdown("<div class='filter-box' style='border-color:#00E676;'>", unsafe_allow_html=True)
+            potential_nums_sorted = sorted(potential_nums)
+            pot_str = " ".join([f"<span class='ball ball-yellow' style='display:inline-flex;margin:2px;color:#111;'>{str(x).zfill(2)}</span>" for x in potential_nums_sorted[:15]])
+            st.markdown(pot_str + ("..." if len(potential_nums)>15 else ""), unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # ----------------------------------------------------
+        # 增加一档展示：0次频段冷号直接作为独立组合策略展示
+        # ----------------------------------------------------
+        zero_freq_nums = [x for x in all_possible_reds if counts_red.get(x, 0) == 0]
+        if zero_freq_nums:
+            z_str = " ".join([str(x).zfill(2) for x in sorted(zero_freq_nums)])
+            z_count = len(zero_freq_nums)
+            req_balls = 5 if is_dlt else 6
+            if z_count >= req_balls:
+                z_bets = calculate_bets(z_count, req_balls)
+                offset_str = f"🎯 **【特种突击策略】**：当前盲区共有 {z_count} 个绝对冷号（**{z_str}**）。若它们内部直接成号，总共仅有 **{z_bets}** 注组合！"
             else:
-                # 双色球：五胆全托 单独列出
-                d5_nums = (dan_source + [1, 2, 3, 4, 5])[:5]
-                d5_str = " ".join([str(x).zfill(2) for x in d5_nums])
-                
-                st.markdown("<div class='filter-box' style='border-color:#FF4B2B; background:#1b1010;'>", unsafe_allow_html=True)
-                st.markdown("#### 🌟 【独家定制】双色球 · 五胆全托红球组合（极限最少组合）")
-                st.markdown(f"* **🎯 建议红球胆码**：<span style='color:#FF4B2B; font-weight:bold;'>{d5_str}</span> （系统优先从盲区冷号精选5个）", unsafe_allow_html=True)
-                st.markdown(f"* **🚜 红球拖码**：包揽其余所有 **{33 - 5}** 个红球（全托）")
-                st.markdown(f"* **📊 红球组合注数**：仅需 **28 注** 红球组合！")
-                st.markdown("* **💰 战术实战预算**：")
-                st.markdown("  1. **后区精选组合**：若锁定后区1个心水蓝球 → **仅需 28 注 (56元)** —— *双色球最省反杀单！*")
-                st.markdown("  2. **后区全托组合**：若后区16个蓝球全部全托全包 → **需 448 注 (896元)**")
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-            st.balloons()
+                offset_str = f"🎯 **【特种突击策略】**：当前盲区仅有 {z_count} 个冷号（不足{req_balls}个，必须搭配温热号）。"
+            
+            st.markdown(f"<div style='background:#2b2b2b; padding:15px; border-radius:10px; text-align:center;'>{offset_str}</div>", unsafe_allow_html=True)
+
+
+        # ----------------------------------------------------
+        # 精准分流：依据彩种展示各种组合策略
+        # ----------------------------------------------------
+        st.markdown("---")
+        if is_dlt:
+            # 大乐透：四胆全托 与 三胆全托 分别列出
+            
+            # 【策略1：四胆全托】
+            d4_nums = (dan_source + [1, 2, 3, 4])[:4]
+            d4_str = " ".join([str(x).zfill(2) for x in d4_nums])
+            
+            st.markdown("<div class='filter-box' style='border-color:#FFD700; background:#1b1b10;'>", unsafe_allow_html=True)
+            st.markdown("#### 🌟 【策略一】超级大乐透 · 四胆全托（最少投入组合）")
+            st.markdown(f"* **🎯 建议红球胆码**：<span style='color:#FFD700; font-weight:bold;'>{d4_str}</span> （系统优先从盲区冷号精选4个）", unsafe_allow_html=True)
+            st.markdown(f"* **🚜 红球拖码**：包揽其余所有 **{35 - 4}** 个红球（全托）")
+            st.markdown(f"* **📊 红球组合注数**：固定为 **31 注** 红球组合")
+            st.markdown("* **💰 战术实战预算**：")
+            st.markdown("  1. **后区精选组合**：若锁定后区2个心水蓝球 → **共 31 注 (62元)**")
+            st.markdown("  2. **后区全托组合**：若后区12个蓝球也全包(66注) → **共 2,046 注 (4,092元)**")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # 【策略2：三胆全托】
+            d3_nums = (dan_source + [1, 2, 3])[:3]
+            d3_str = " ".join([str(x).zfill(2) for x in d3_nums])
+            
+            st.markdown("<div class='filter-box' style='border-color:#FFD700; background:#101b1b;'>", unsafe_allow_html=True)
+            st.markdown("#### 🌟 【策略二】超级大乐透 · 三胆全托（覆盖率较高组合）")
+            st.markdown(f"* **🎯 建议红球胆码**：<span style='color:#FFD700; font-weight:bold;'>{d3_str}</span> （系统优先从盲区冷号精选3个）", unsafe_allow_html=True)
+            st.markdown(f"* **🚜 红球拖码**：包揽其余所有 **{35 - 3}** 个红球（全托）")
+            st.markdown(f"* **📊 红球组合注数**：固定为 **496 注** 红球组合")
+            st.markdown("* **💰 战术实战预算**：")
+            st.markdown("  1. **后区精选组合**：若锁定后区2个心水蓝球 → **共 496 注 (992元)**")
+            st.markdown("  2. **后区全托组合**：若后区12个蓝球也全包(66注) → **共 32,736 注 (65,472元)**")
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+        else:
+            # 双色球：五胆全托 单独列出
+            d5_nums = (dan_source + [1, 2, 3, 4, 5])[:5]
+            d5_str = " ".join([str(x).zfill(2) for x in d5_nums])
+            
+            st.markdown("<div class='filter-box' style='border-color:#FF4B2B; background:#1b1010;'>", unsafe_allow_html=True)
+            st.markdown("#### 🌟 【独家定制】双色球 · 五胆全托红球组合（极限最少组合）")
+            st.markdown(f"* **🎯 建议红球胆码**：<span style='color:#FF4B2B; font-weight:bold;'>{d5_str}</span> （系统优先从盲区冷号精选5个）", unsafe_allow_html=True)
+            st.markdown(f"* **🚜 红球拖码**：包揽其余所有 **{33 - 5}** 个红球（全托）")
+            st.markdown(f"* **📊 红球组合注数**：固定为 **28 注** 红球组合")
+            st.markdown("* **💰 战术实战预算**：")
+            st.markdown("  1. **后区精选组合**：若锁定后区1个心水蓝球 → **共 28 注 (56元)**")
+            st.markdown("  2. **后区全托组合**：若后区16个蓝球全包(16注) → **共 448 注 (896元)**")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # ----------------------------------------------------
+        # 4. 高级战术过滤罗盘：012路阻击阵地
+        # ----------------------------------------------------
+        st.markdown("### 📊 高级战术过滤罗盘：012路阻击阵地")
+        
+        # 按012路划分号码池（红球）
+        max_r_num = 35 if is_dlt else 33
+        f_0 = [x for x in range(1, max_r_num+1) if x % 3 == 0]
+        f_1 = [x for x in range(1, max_r_num+1) if x % 3 == 1]
+        f_2 = [x for x in range(1, max_r_num+1) if x % 3 == 2]
+
+        max_b_num = 12 if is_dlt else 16
+        b_0 = [x for x in range(1, max_b_num+1) if x % 3 == 0]
+        b_1 = [x for x in range(1, max_b_num+1) if x % 3 == 1]
+        b_2 = [x for x in range(1, max_b_num+1) if x % 3 == 2]
+
+        st.markdown("#### 🔍 012路形态出号个数自定义配置（组合过滤核心）")
+        
+        col_f0, col_f1, col_f2 = st.columns(3)
+        with col_f0:
+            f_req_0 = st.number_input("🔴 前区 0 路球个数", min_value=0, max_value=f_len, value=2)
+        with col_f1:
+            f_req_1 = st.number_input("🔴 前区 1 路球个数", min_value=0, max_value=f_len, value=2)
+        with col_f2:
+            f_req_2 = st.number_input("🔴 前区 2 路球个数", min_value=0, max_value=f_len, value=1 if is_dlt else 2)
+
+        col_b0, col_b1, col_b2 = st.columns(3)
+        with col_b0:
+            b_req_0 = st.number_input("🔵 后区 0 路球个数", min_value=0, max_value=2, value=1 if is_dlt else 0)
+        with col_b1:
+            b_req_1 = st.number_input("🔵 后区 1 路球个数", min_value=0, max_value=2, value=1 if is_dlt else 0)
+        with col_b2:
+            b_req_2 = st.number_input("🔵 后区 2 路球个数", min_value=0, max_value=2, value=0 if is_dlt else 1)
+
+        # 动态验证形态总和
+        req_f = 5 if is_dlt else 6
+        req_b = 2 if is_dlt else 1
+        sum_f = f_req_0 + f_req_1 + f_req_2
+        sum_b = b_req_0 + b_req_1 + b_req_2
+
+        if sum_f != req_f or sum_b != req_b:
+            st.error("⚠️ **校验失败**：请确保前区和后区的012路设定总数正确！")
+        else:
+            total_filtered_bets = calculate_bets(len(f_0), f_req_0) * calculate_bets(len(f_1), f_req_1) * calculate_bets(len(f_2), f_req_2) * calculate_bets(len(b_0), b_req_0) * calculate_bets(len(b_1), b_req_1) * calculate_bets(len(b_2), b_req_2)
+            st.success(f"🔥 形态验证成功：当前配置形态理论极限组合总数为 **{total_filtered_bets}** 注！")
