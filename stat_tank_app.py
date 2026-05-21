@@ -546,6 +546,10 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
                 for img in uploaded_images:
                     img_bytes = img.read()
                     text = baidu_ocr(img_bytes, token)
+                    
+                    # 👇👇👇 就是加了下面这一行透视代码 👇👇👇
+                    st.info(f"👀 百度AI底层看到的原始文字是：{text}")
+                    
                     combined_text += " " + text
             else:
                 st.error("🚨 AI 接口连线失败！请检查百度的 API_KEY 和 SECRET_KEY 是否正确配置。")
