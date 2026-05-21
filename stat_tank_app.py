@@ -370,13 +370,75 @@ if not df_base.empty:
     with st.expander(f"🟢 数据加载成功！共捕获 {actual_periods} 期精准数据 (展开查看明细)"):
         st.dataframe(df.astype(str), use_container_width=True)
 
+    # ==========================================
+    # 💎 完美升级：📊 核心形态多维走势分析大盘 (彻底替换原形态扫描)
+    # ==========================================
     st.markdown("---")
-    st.subheader("🕵️‍♂️ 形态深度扫描引擎")
+    st.subheader("📊 核心形态多维走势分析大盘")
     if actual_periods > 0:
-        repeat_num, cons_num = scan_advanced_patterns(df, df_base, is_dlt)
-        rc1, rc2 = st.columns(2)
-        rc1.warning(f"🔁 **前区重号规律**：在这 {actual_periods} 期中，有 **{repeat_num}** 期开出了上一期的落号。(发生概率: **{repeat_num/actual_periods*100:.1f}%**)")
-        rc2.error(f"🔗 **前区连号规律**：在这 {actual_periods} 期中，有 **{cons_num}** 期出现了连号组合。(发生概率: **{cons_num/actual_periods*100:.1f}%**)")
+        front_cols = ['前1', '前2', '前3', '前4', '前5'] if is_dlt else ['前1', '前2', '前3', '前4', '前5', '前6']
+        df_ana = df.copy()
+        
+        # 计算核心基础技术指标
+        df_ana['和值'] = df_ana[front_cols].sum(axis=1)
+        df_ana['跨度'] = df_ana[front_cols].max(axis=1) - df_ana[front_cols].min(axis=1)
+        
+        def get_row_details(row):
+            nums = sorted([int(row[c]) for c in front_cols])
+            odds = sum(1 for x in nums if x % 2 != 0)
+            bigs = sum(1 for x in nums if x > (17 if is_dlt else 16))
+            has_consecutive = "有连号" if any(nums[i+1] - nums[i] == 1 for i in range(len(nums)-1)) else "无连号"
+            return f"{odds}:{len(front_cols)-odds}", f"{bigs}:{len(front_cols)-bigs}", has_consecutive
+            
+        res_details = df_ana.apply(get_row_details, axis=1)
+        df_ana['奇偶比'] = [r[0] for r in res_details]
+        df_ana['大小比'] = [r[1] for r in res_details]
+        df_ana['连号状态'] = [r[2] for r in res_details]
+        
+        # 深度穿透计算历史重号明细
+        repeat_status = []
+        repeat_num = 0
+        cons_num = 0
+        for idx, row in df_ana.iterrows():
+            nums_set = set(sorted([int(row[c]) for c in front_cols]))
+            if row['连号状态'] == "有连号":
+                cons_num += 1
+            full_idx = df_base.index[df_base['期号'] == row['期号']].tolist()
+            if full_idx and full_idx[0] + 1 < len(df_base):
+                prev_nums = set([int(df_base.iloc[full_idx[0] + 1][c]) for c in front_cols])
+                intersect = nums_set.intersection(prev_nums)
+                if len(intersect) > 0:
+                    repeat_num += 1
+                    repeat_status.append(f"重{len(intersect)}码({','.join([str(x).zfill(2) for x in sorted(intersect)])})")
+                else:
+                    repeat_status.append("无重号")
+            else:
+                repeat_status.append("数据源不足")
+        df_ana['重号状态'] = repeat_status
+
+        # 1️⃣ 顶置战术级核心数据看板
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("📈 历史均值和值", f"{df_ana['和值'].mean():.1f}")
+        m2.metric("📐 历史平均跨度", f"{df_ana['跨度'].mean():.1f}")
+        m3.metric("🔁 历史重号率", f"{repeat_num / actual_periods * 100:.1f}%")
+        m4.metric("🔗 历史连号率", f"{cons_num / actual_periods * 100:.1f}%")
+        
+        # 2️⃣ 可视化走势图表联动展示区
+        t_col1, t_col2 = st.columns([2, 1])
+        with t_col1:
+            st.markdown("##### 📉 锁定周期内【前区开奖和值】波动轨迹")
+            df_chart = df_ana.sort_values(by='期号')[['期号', '和值']].set_index('期号')
+            st.line_chart(df_chart, use_container_width=True)
+        with t_col2:
+            st.markdown("##### 📊 锁定周期内【跨度分布】热度")
+            df_span_chart = df_ana.sort_values(by='期号')[['期号', '跨度']].set_index('期号')
+            st.bar_chart(df_span_chart, use_container_width=True)
+            
+        # 3️⃣ 高级形态综合数据全景透视表
+        st.markdown("##### 📋 锁定周期内形态透视明细数据流")
+        df_show = df_ana[['期号', '和值', '跨度', '奇偶比', '大小比', '连号状态', '重号状态']].copy()
+        df_show['期号'] = "第 " + df_show['期号'].astype(str) + " 期"
+        st.dataframe(df_show, use_container_width=True, hide_index=True)
     else:
         st.warning("⚠️ 暂无足够的数据周期进行形态扫描。")
 
