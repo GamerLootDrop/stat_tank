@@ -19,24 +19,42 @@ BAIDU_API_KEY = "F6lfslP94zn49B90NXSv5NhV"
 BAIDU_SECRET_KEY = "589HERNjnrxX17w4CKdqMVUrJeKGRryR"
 
 def get_baidu_token(api_key, secret_key):
-    """获取百度AI的通行令牌"""
+    """获取百度AI的通行令牌（小白增强版：错误直接弹窗）"""
     url = f"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={api_key}&client_secret={secret_key}"
     try:
-        res = requests.post(url, headers={'Content-Type': 'application/json', 'Accept': 'application/json'}, timeout=5)
-        return res.json().get("access_token")
-    except Exception:
+        # 连线百度服务器，超时时间设为 8 秒
+        res = requests.post(url, headers={'Content-Type': 'application/json', 'Accept': 'application/json'}, timeout=8)
+        res_json = res.json()
+        
+        # 如果百度提示账号密码不对，直接在网页前端弹红框
+        if "error" in res_json:
+            st.error(f"🔑 百度账号验证失败！请检查代码顶部的 BAIDU_API_KEY 和 SECRET_KEY 是否填错。具体原因: {res_json.get('error_description')}")
+            return None
+        return res_json.get("access_token")
+    except Exception as e:
+        st.error(f"❌ 连线百度服务器超时！可能是此时网络波动，请稍后再试。错误信息: {str(e)}")
         return None
 
 def baidu_ocr(image_bytes, token):
-    """调用百度网络图片文字识别提取文本"""
+    """调用百度网络图片文字识别提取文本（小白增强版：网络延时+接口纠错）"""
     url = "https://aip.baidubce.com/rest/2.0/ocr/v1/webimage?access_token=" + token
     payload = {'image': base64.b64encode(image_bytes).decode('utf-8')}
     headers = {'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'}
     try:
-        res = requests.post(url, headers=headers, data=payload, timeout=8)
-        words_result = res.json().get("words_result", [])
+        # 🚀 核心改动 1：把原本的 8 秒超时，延长到 25 秒！防止由于晒票图片太大、上传慢导致断连
+        res = requests.post(url, headers=headers, data=payload, timeout=25)
+        res_json = res.json()
+        
+        # 🚀 核心改动 2：如果百度接口报错（比如免费额度用光了），直接弹窗提示
+        if "error_code" in res_json:
+            st.error(f"⚠️ 百度视觉大脑返回错误！错误原因: {res_json.get('error_msg')} (错误码: {res_json.get('error_code')})")
+            return ""
+            
+        words_result = res_json.get("words_result", [])
         return " ".join([item.get("words", "") for item in words_result])
-    except Exception:
+    except Exception as e:
+        # 🚀 核心改动 3：如果是其他突发情况，把真正的病因打印在网页上
+        st.error(f"❌ 图片上传或识别时发生异常，病因: {str(e)}")
         return ""
 
 # ==========================================
