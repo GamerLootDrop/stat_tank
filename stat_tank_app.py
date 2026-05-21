@@ -724,14 +724,14 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
                 st.markdown("</div>", unsafe_allow_html=True)
                 
             # ======================================================================
-            # 📐 数学正统：📊 纯公式全维度交集概率矩阵核算大底 (精确对齐全局统计变量)
+            # 📐 数学正统：📊 纯公式全维度交集概率矩阵核算大底 (智能自适应双色球/大乐透双通道)
             # ======================================================================
             st.markdown("---")
             st.markdown("### 📐 纯公式全维度数据融聚选号中控")
             
             # 精准获取当前前端滑块设定的期数描述
             current_period_desc = str(history_limit) if 'history_limit' in locals() else "自定义"
-            st.info(f"💡 **五合一全自适应决策链**：核心中控已完美接管前端 **【{current_period_desc}期】** 大盘惯性！并深度融合历史同期分布、星期爆发概率，最后结合AI晒票进行博弈斩杀。")
+            st.info(f"💡 **五合一全自适应决策链**：核心中控已完美接管前端 **【{current_period_desc}期】** 大盘惯性！并已智能对齐{'大乐透' if is_dlt else '双色球'}独立统计变量，全面融入同期分布、星期爆发概率与AI晒票博弈。")
 
             max_r = 35 if is_dlt else 33
             max_b = 12 if is_dlt else 16
@@ -739,14 +739,24 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
             req_b = 2 if is_dlt else 1
 
             # ------------------------------------------------------------------
-            # 管道 1：精确绑定并提取前面清洗好的全局大盘变量 (修正变量名错位隐患)
+            # 管道 1：智能动态绑定大乐透(_list)和双色球的不同统计变量，防止大盘计算踩空
             # ------------------------------------------------------------------
-            recent_red_pool = [x[0] for x in sorted_red_30[:15]] if 'sorted_red_30' in locals() and sorted_red_30 else list(range(1, max_r+1))
-            history_tongqi_pool = [x[0] for x in sorted_history_red[:15]] if 'sorted_history_red' in locals() and sorted_history_red else list(range(1, max_r+1))
-            weekday_pool = [x[0] for x in sorted_weekday_red[:15]] if 'sorted_weekday_red' in locals() and sorted_weekday_red else list(range(1, max_r+1))
+            if is_dlt:
+                # 智能接管大乐透专线变量
+                recent_red_pool = [x[0] for x in sorted_red_30[:15]] if 'sorted_red_30' in locals() and sorted_red_30 else list(range(1, max_r+1))
+                history_tongqi_pool = [x[0] for x in sorted_history_red_list[:15]] if 'sorted_history_red_list' in locals() and sorted_history_red_list else list(range(1, max_r+1))
+                weekday_pool = [x[0] for x in sorted_weekday_red_list[:15]] if 'sorted_weekday_red_list' in locals() and sorted_weekday_red_list else list(range(1, max_r+1))
 
-            recent_blue_pool = [x[0] for x in sorted_blue_30[:6]] if 'sorted_blue_30' in locals() and sorted_blue_30 else list(range(1, max_b+1))
-            weekday_blue_pool = [x[0] for x in sorted_weekday_blue[:6]] if 'sorted_weekday_blue' in locals() and sorted_weekday_blue else list(range(1, max_b+1))
+                recent_blue_pool = [x[0] for x in sorted_blue_30[:6]] if 'sorted_blue_30' in locals() and sorted_blue_30 else list(range(1, max_b+1))
+                weekday_blue_pool = [x[0] for x in sorted_weekday_blue_list[:6]] if 'sorted_weekday_blue_list' in locals() and sorted_weekday_blue_list else list(range(1, max_b+1))
+            else:
+                # 智能接管双色球专线变量
+                recent_red_pool = [x[0] for x in sorted_red_30[:15]] if 'sorted_red_30' in locals() and sorted_red_30 else list(range(1, max_r+1))
+                history_tongqi_pool = [x[0] for x in sorted_history_red[:15]] if 'sorted_history_red' in locals() and sorted_history_red else list(range(1, max_r+1))
+                weekday_pool = [x[0] for x in sorted_weekday_red[:15]] if 'sorted_weekday_red' in locals() and sorted_weekday_red else list(range(1, max_r+1))
+
+                recent_blue_pool = [x[0] for x in sorted_blue_30[:6]] if 'sorted_blue_30' in locals() and sorted_blue_30 else list(range(1, max_b+1))
+                weekday_blue_pool = [x[0] for x in sorted_weekday_blue[:6]] if 'sorted_weekday_blue' in locals() and sorted_weekday_blue else list(range(1, max_b+1))
 
             # ------------------------------------------------------------------
             # 管道 2：公式矩阵得分核算 (红球大热一票否决，蓝球柔性惩罚)
@@ -783,15 +793,17 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
             # 确定性容错兜底
             if len(sorted_math_reds) < req_r + 2:
                 sorted_math_reds = [x for x in range(1, max_r + 1) if x not in hot_nums]
-            if len(sorted_math_blues) < req_b + 1:
+            if len(sorted_math_blues) < req_b + 2:
                 sorted_math_blues = [x for x in range(1, max_b + 1)]
 
             # 提取最终红蓝球实战方案
             final_math_reds = sorted(sorted_math_reds[:req_r])
             final_math_blues = sorted(sorted_math_blues[:req_b])
             
+            # 战术复式扩容：红球稳健增加 2 个；蓝球/后区如果是大乐透增加 2 个(选4个球)，双色球增加 1 个(选2个球)
             fushi_math_reds = sorted(sorted_math_reds[:req_r + 2])
-            fushi_math_blues = sorted(sorted_math_blues[:req_b + 1])
+            fushi_blue_count = req_b + 2 if is_dlt else req_b + 1
+            fushi_math_blues = sorted(sorted_math_blues[:fushi_blue_count])
 
             # ------------------------------------------------------------------
             # 管道 4：流线型前端渲染
@@ -813,7 +825,7 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
                 
             with rc2:
                 st.markdown("<div class='filter-box' style='border-color:#29B6F6; background:#0d171b; padding:15px; border-radius:8px;'>", unsafe_allow_html=True)
-                st.markdown(f"#### 🛡️ 五合一数据融聚 · 战术复式号码 ({req_r+2}+{req_b+1})")
+                st.markdown(f"#### 🛡️ 五合一数据融聚 · 战术复式号码 ({len(fushi_math_reds)}+{len(fushi_math_blues)})")
                 st.markdown(f"<span style='color:#a0aec0; font-size:13px;'>结合 <b>{current_period_desc}期</b> 形态空间进行多点覆盖的期望最大化防御方案：</span>", unsafe_allow_html=True)
                 
                 rf_html = "".join([f"<div class='ball {ball_class_r}' style='display:inline-flex;margin:2px;'>{str(x).zfill(2)}</div>" for x in fushi_math_reds])
