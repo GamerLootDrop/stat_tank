@@ -20,7 +20,7 @@ BAIDU_SECRET_KEY = "589HERNjnrxX17w4CKdqMVUrJeKGRryR"
 
 def get_baidu_token(api_key, secret_key):
     """获取百度AI的通行令牌"""
-    url = f"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={api_key}&client_secret={secret_key}"
+    url = f"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={api_key}&secret_key={secret_key}"
     try:
         res = requests.post(url, headers={'Content-Type': 'application/json', 'Accept': 'application/json'}, timeout=5)
         return res.json().get("access_token")
@@ -164,7 +164,7 @@ st.markdown("<p style='text-align: center; color: #888;'>此系统为内部绝�
 # 数据层功能
 # -------------------------
 @st.cache_data(ttl=600)  # 缓存10分钟，避免高频请求导致被502封禁
-def fetch_lottery_data(game_type="ssq", limit=100):
+def fetch_lottery_data(game_type="ssq", limit=50):
     """从公共接口拉取最新的双色球或大乐透历史开奖数据(带防缓存机制)"""
     timestamp = int(time.time())
     if game_type == "ssq":
@@ -445,7 +445,7 @@ if source is not None:
                 freq = counts_red.get(i, 0)
                 bg_color = get_heat_color(i, counts_red, is_blue_ball=False)
                 border_style = "border: 2px solid #FF4B2B;" if freq > 0 else "border: 1px solid #475569;"
-                html_red_matrix += f"<div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'><b style='font-size:15px;'>{str(i).zfill(2)}</b><br><span style='font-size:11px; opacity:0.85;'>{freq}次</span></div>"
+                html_red_matrix += f"""<div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'><b style='font-size:15px;'>{str(i).zfill(2)}</b><br><span style='font-size:11px; opacity:0.85;'>{freq}次</span></div>"""
             html_red_matrix += "</div>"
             st.markdown(html_red_matrix, unsafe_allow_html=True)
             
@@ -457,7 +457,7 @@ if source is not None:
                 freq = counts_blue.get(i, 0)
                 bg_color = get_heat_color(i, counts_blue, is_blue_ball=True)
                 border_style = "border: 2px solid #0052D4;" if freq > 0 else "border: 1px solid #475569;"
-                html_blue_matrix += f"<div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'><b style='font-size:15px;'>{str(i).zfill(2)}</b><br><span style='font-size:11px; opacity:0.85;'>{freq}次</span></div>"
+                html_blue_matrix += f"""<div style='background:{bg_color}; {border_style} border-radius:6px; padding:8px 4px; text-align:center; color:white;'><b style='font-size:15px;'>{str(i).zfill(2)}</b><br><span style='font-size:11px; opacity:0.85;'>{freq}次</span></div>"""
             html_blue_matrix += "</div>"
             st.markdown(html_blue_matrix, unsafe_allow_html=True)
 
