@@ -724,7 +724,7 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
                 st.markdown("</div>", unsafe_allow_html=True)
                 
             # ======================================================================
-            # 📐 数学正统：📊 纯公式全维度交集概率矩阵核算大底 (智能自适应双色球/大乐透双通道)
+            # 📐 数学正统：📊 纯公式全维度交集概率矩阵核算大底 (智能自适应双色球/大乐透双通道完全体)
             # ======================================================================
             st.markdown("---")
             st.markdown("### 📐 纯公式全维度数据融聚选号中控")
@@ -742,7 +742,7 @@ if st.button("⚡ 启动系统反杀逻辑：AI 智能识图与一键出报告",
             # 管道 1：智能动态绑定大乐透(_list)和双色球的不同统计变量，防止大盘计算踩空
             # ------------------------------------------------------------------
             if is_dlt:
-                # 智能接管大乐透专线变量
+                # 智能接管大乐透专线变量 (精确对齐 _list 后缀)
                 recent_red_pool = [x[0] for x in sorted_red_30[:15]] if 'sorted_red_30' in locals() and sorted_red_30 else list(range(1, max_r+1))
                 history_tongqi_pool = [x[0] for x in sorted_history_red_list[:15]] if 'sorted_history_red_list' in locals() and sorted_history_red_list else list(range(1, max_r+1))
                 weekday_pool = [x[0] for x in sorted_weekday_red_list[:15]] if 'sorted_weekday_red_list' in locals() and sorted_weekday_red_list else list(range(1, max_r+1))
